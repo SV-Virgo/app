@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// Server-side enforcement of the same role/permission model the app uses
+// client-side (src/permissions/catalog.ts). The client hides screens and
+// actions a role doesn't have, but these rules are what actually stop a
+// request that doesn't have the permission — never trust the client alone.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myRoleId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId;
+    }
+
+    function hasPermission(key) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/roles/$(myRoleId())).data.permissions[key] == true;
+    }
+
+    // Roles: everyone signed in can read the catalog (needed to resolve their
+    // own permissions and to show role names in the UI); only a role with
+    // roles.manage can create, rename, retune or delete a role.
+    match /roles/{roleId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('roles.manage');
+    }
+
+    // Users: everyone signed in can read the member list (needed for linking
+    // members to a booking, assigning shifts, showing initials, etc). A
+    // member can update their own profile but not their own roleId — only
+    // members.manage can change roleId or create/delete profiles (accounts
+    // are provisioned by Bestuur, not self-signup, per the design).
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if hasPermission('members.manage');
+      allow update: if hasPermission('members.manage') ||
+        (request.auth.uid == uid &&
+         request.resource.data.roleId == resource.data.roleId);
+      allow delete: if hasPermission('members.manage');
+    }
+
+    match /feed/{postId} {
+      allow read: if signedIn();
+      allow create, update, delete: if hasPermission('feed.post');
+    }
+
+    // Rooms are seeded (see scripts/seed.ts) and edited outside the app for now.
+    match /rooms/{roomId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if signedIn();
+      allow create: if hasPermission('ruimtes.book') &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        (request.resource.data.roomId != 'fysio' || hasPermission('ruimtes.bookFysio')) &&
+        (request.resource.data.linkedMembers.size() == 0 || hasPermission('ruimtes.linkMembers'));
+      allow delete: if hasPermission('ruimtes.cancelAnyBooking') ||
+        (resource.data.createdByUid == request.auth.uid && hasPermission('ruimtes.book'));
+    }
+
+    match /planningWeeks/{weekId} {
+      allow read: if signedIn();
+      allow create, update: if hasPermission('planning.setSlots') || hasPermission('planning.publish');
+    }
+
+    match /planningSlots/{slotId} {
+      allow read: if signedIn();
+      allow create, update, delete: if hasPermission('planning.setSlots');
+    }
+
+    match /preferences/{prefId} {
+      allow read: if signedIn();
+      allow create, update: if hasPermission('planning.submitPreferences') &&
+        request.resource.data.uid == request.auth.uid;
+      allow delete: if hasPermission('planning.submitPreferences') && resource.data.uid == request.auth.uid;
+    }
+
+    match /assignments/{assignmentId} {
+      allow read: if signedIn();
+      allow create, update, delete: if hasPermission('planning.assignMembers');
+    }
+
+    match /priceCategories/{categoryId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('soos.managePrices');
+    }
+
+    match /agendaEvents/{eventId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('agenda.manage');
+    }
+  }
+}

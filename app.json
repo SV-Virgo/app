@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Virgo",
+    "slug": "virgo-app",
+    "scheme": "virgo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "nl.svvirgo.app"
+    },
+    "android": {
+      "package": "nl.svvirgo.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#2563a8",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2563a8",
+          "image": "./assets/brand/logo-white.png",
+          "imageWidth": 160
+        }
+      ]
+    ]
+  }
+}
