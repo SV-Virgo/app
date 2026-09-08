@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import {
@@ -21,8 +21,16 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { InitialsAvatar } from '../components/InitialsAvatar';
+import { PickerField } from '../components/PickerField';
 import { colors, fontFamily, fontSize, radius, surface, text, tracking } from '../theme/tokens';
 import { currentWeekId, nextWeekId, weekAfterNextId, weekNumber } from '../utils/week';
+import { formatDutchDayLong, formatTimeRange } from '../utils/date';
+
+function setHours(date: Date, hours: number, minutes: number): Date {
+  const d = new Date(date);
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
 
 export function PlanningScreen() {
   const { profile, role, hasPermission } = useAuth();
@@ -128,8 +136,9 @@ function ManagerSection({ roleName }: { roleName?: string }) {
   const [preferences, setPreferences] = useState<Preference[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
-  const [newSlotDay, setNewSlotDay] = useState('');
-  const [newSlotTime, setNewSlotTime] = useState('');
+  const [newSlotDate, setNewSlotDate] = useState(() => new Date());
+  const [newSlotFrom, setNewSlotFrom] = useState(() => setHours(new Date(), 20, 30));
+  const [newSlotTo, setNewSlotTo] = useState(() => setHours(new Date(), 1, 0));
   const [assigningSlot, setAssigningSlot] = useState<string | null>(null);
 
   useEffect(() => watchPlanningWeeks((weeks) => setWeek(weeks.find((w) => w.id === conceptWeek) ?? null)), [conceptWeek]);
@@ -139,11 +148,12 @@ function ManagerSection({ roleName }: { roleName?: string }) {
   useEffect(() => watchAllUsers(setAllUsers), []);
 
   async function addSlotToOpenWeek() {
-    if (!newSlotDay || !newSlotTime) return;
     await ensurePlanningWeek({ id: openWeek, weekNumber: weekNumber(openWeek), published: false });
-    await addPlanningSlot({ weekId: openWeek, day: newSlotDay, time: newSlotTime });
-    setNewSlotDay('');
-    setNewSlotTime('');
+    await addPlanningSlot({
+      weekId: openWeek,
+      day: formatDutchDayLong(newSlotDate),
+      time: formatTimeRange(newSlotFrom, newSlotTo),
+    });
   }
 
   async function publish() {
@@ -227,11 +237,14 @@ function ManagerSection({ roleName }: { roleName?: string }) {
         <Text style={{ fontFamily: fontFamily.body, fontSize: 12, color: text.muted }}>
           Zet tijdvakken voor week {weekNumber(openWeek)} open zodat leden voorkeuren kunnen doorgeven.
         </Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-          <TextInput value={newSlotDay} onChangeText={setNewSlotDay} placeholder="Dinsdag 23 sep" placeholderTextColor={colors.ink300} style={[styles.textField, { flex: 1 }]} />
-          <TextInput value={newSlotTime} onChangeText={setNewSlotTime} placeholder="20:30 – 01:00" placeholderTextColor={colors.ink300} style={[styles.textField, { flex: 1 }]} />
+        <View style={{ marginTop: 6, gap: 10 }}>
+          <PickerField label="Datum" mode="date" value={newSlotDate} onChange={setNewSlotDate} minimumDate={new Date()} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <PickerField label="Van" mode="time" value={newSlotFrom} onChange={setNewSlotFrom} />
+            <PickerField label="Tot" mode="time" value={newSlotTo} onChange={setNewSlotTo} />
+          </View>
         </View>
-        <Button variant="secondary" onPress={addSlotToOpenWeek} disabled={!newSlotDay || !newSlotTime}>
+        <Button variant="secondary" onPress={addSlotToOpenWeek}>
           + Tijdvak toevoegen
         </Button>
       </Card>
@@ -283,5 +296,4 @@ const styles = StyleSheet.create({
   prefBtn: { height: 30, borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   slotFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1.5, borderTopColor: colors.ink150, paddingTop: 10 },
-  textField: { borderWidth: 1.5, borderColor: colors.ink300, borderRadius: radius.sm, padding: 10, fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.body },
 });

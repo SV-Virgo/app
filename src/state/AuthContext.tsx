@@ -25,6 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [roles, setRoles] = useState<Role[]>([]);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [rolesLoading, setRolesLoading] = useState(true);
 
   useEffect(() => subscribeToAuthState((user) => {
     setFirebaseUser(user);
@@ -32,6 +33,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       setProfile(null);
       setProfileLoading(false);
+      setRoles([]);
+      setRolesLoading(true);
     }
   }), []);
 
@@ -44,7 +47,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [firebaseUser]);
 
-  useEffect(() => watchRoles(setRoles), []);
+  useEffect(() => {
+    // roles requires an authenticated read (see firestore.rules) — fetching
+    // it before login would error forever and never clear rolesLoading,
+    // which would keep the whole app stuck on the loading screen.
+    if (!firebaseUser) return;
+    setRolesLoading(true);
+    return watchRoles((r) => {
+      setRoles(r);
+      setRolesLoading(false);
+    });
+  }, [firebaseUser]);
 
   const role = useMemo(
     () => roles.find((r) => r.id === profile?.roleId) ?? null,
@@ -61,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     role,
     roles,
-    loading: authLoading || (!!firebaseUser && profileLoading),
+    loading: authLoading || (!!firebaseUser && (profileLoading || rolesLoading)),
     hasPermission,
     login: async (email, password) => {
       await firebaseLogin(email, password);

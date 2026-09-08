@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import { watchRooms, watchBookings, watchMyBookings, createBooking, cancelBooking } from '../firebase/rooms';
@@ -8,8 +8,16 @@ import type { Booking, Room, UserProfile } from '../types';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { PickerField } from '../components/PickerField';
 import { CommitteeIcon, LockIcon } from '../components/MiscIcons';
 import { colors, fontFamily, fontSize, radius, surface, text, tracking } from '../theme/tokens';
+import { formatIsoDateShort, formatTime, toIsoDate } from '../utils/date';
+
+function setHours(date: Date, hours: number, minutes: number): Date {
+  const d = new Date(date);
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
 
 export function RuimtesScreen() {
   const { profile, hasPermission } = useAuth();
@@ -17,9 +25,9 @@ export function RuimtesScreen() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [date, setDate] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [date, setDate] = useState(() => new Date());
+  const [from, setFrom] = useState(() => setHours(new Date(), 19, 30));
+  const [to, setTo] = useState(() => setHours(new Date(), 21, 0));
   const [linked, setLinked] = useState<UserProfile[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -44,13 +52,13 @@ export function RuimtesScreen() {
   );
 
   async function submitBooking() {
-    if (!selectedRoom || !date || !from || !to || !profile) return;
+    if (!selectedRoom || !profile) return;
     await createBooking({
       roomId: selectedRoom.id,
       roomName: selectedRoom.name,
-      date,
-      from,
-      to,
+      date: toIsoDate(date),
+      from: formatTime(from),
+      to: formatTime(to),
       createdByUid: profile.uid,
       createdByName: profile.name,
       linkedMembers: linked.map((u) => ({
@@ -60,9 +68,6 @@ export function RuimtesScreen() {
       })),
     });
     setSelectedRoom(null);
-    setDate('');
-    setFrom('');
-    setTo('');
     setLinked([]);
   }
 
@@ -117,20 +122,11 @@ export function RuimtesScreen() {
                 })}
               </View>
 
-              <View style={{ gap: 6 }}>
-                <Text style={styles.fieldLabel}>Datum</Text>
-                <TextInput value={date} onChangeText={setDate} placeholder="di 16 september" placeholderTextColor={colors.ink300} style={styles.textField} />
-              </View>
+              <PickerField label="Datum" mode="date" value={date} onChange={setDate} minimumDate={new Date()} />
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Text style={styles.fieldLabel}>Van</Text>
-                  <TextInput value={from} onChangeText={setFrom} placeholder="19:30" placeholderTextColor={colors.ink300} style={styles.textField} />
-                </View>
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Text style={styles.fieldLabel}>Tot</Text>
-                  <TextInput value={to} onChangeText={setTo} placeholder="21:00" placeholderTextColor={colors.ink300} style={styles.textField} />
-                </View>
+                <PickerField label="Van" mode="time" value={from} onChange={setFrom} />
+                <PickerField label="Tot" mode="time" value={to} onChange={setTo} />
               </View>
 
               {canLink && (
@@ -170,7 +166,7 @@ export function RuimtesScreen() {
                 </View>
               )}
 
-              <Button onPress={submitBooking} disabled={!selectedRoom || !date || !from || !to}>
+              <Button onPress={submitBooking} disabled={!selectedRoom}>
                 Reserveren
               </Button>
             </Card>
@@ -186,7 +182,7 @@ export function RuimtesScreen() {
             <View key={b.id} style={styles.bookingRow}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.roomName}>{b.roomName}</Text>
-                <Text style={styles.bookingMeta}>{b.date} · {b.from} – {b.to}</Text>
+                <Text style={styles.bookingMeta}>{formatIsoDateShort(b.date)} · {b.from} – {b.to}</Text>
                 {b.linkedMembers.length > 0 && (
                   <Text style={styles.bookingMeta}>Met {b.linkedMembers.map((m) => m.name).join(', ')}</Text>
                 )}
@@ -233,7 +229,6 @@ const styles = StyleSheet.create({
   roomMeta: { fontFamily: fontFamily.body, fontSize: 11, color: text.muted },
   lockRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   lockLabel: { fontFamily: fontFamily.bodySemibold, fontSize: 11, color: text.muted },
-  textField: { borderWidth: 1.5, borderColor: colors.ink300, borderRadius: radius.sm, padding: 10, fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.body },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.blue100, borderRadius: radius.pill, paddingVertical: 5, paddingHorizontal: 10 },
   chipText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.blue700 },

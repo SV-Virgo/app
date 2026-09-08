@@ -1,7 +1,9 @@
 import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useAuth } from '../state/AuthContext';
-import { colors, fontFamily } from '../theme/tokens';
+import { colors, fontFamily, fontSize, surface, text } from '../theme/tokens';
 import { HomeIcon, RuimtesIcon, SoosIcon, PlanningIcon, AgendaIcon } from '../components/TabIcons';
 import { HomeScreen } from '../screens/HomeScreen';
 import { RuimtesScreen } from '../screens/RuimtesScreen';
@@ -32,8 +34,28 @@ const TAB_DEFS: {
 // flips `screens.*` for any role from the Rollen beheren admin screen and
 // the tab bar (and the routes behind it) reacts immediately.
 export function TabNavigator() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, role, logout } = useAuth();
   const visibleTabs = TAB_DEFS.filter((t) => hasPermission(t.permission));
+
+  // A role with every screens.* permission off is a valid (if unusual) admin
+  // configuration — react-navigation crashes if a navigator has zero screens,
+  // so this has to be handled explicitly rather than left to blow up.
+  if (visibleTabs.length === 0) {
+    return (
+      <SafeAreaView style={styles.emptyScreen}>
+        <View style={styles.emptyContent}>
+          <Text style={styles.emptyTitle}>Nog geen toegang</Text>
+          <Text style={styles.emptyBody}>
+            Je rol{role?.name ? ` (${role.name})` : ''} heeft nog geen toegang tot een scherm. Vraag het bestuur om
+            rechten toe te voegen bij Rollen beheren.
+          </Text>
+          <Pressable onPress={() => logout()}>
+            <Text style={styles.emptyLogout}>Uitloggen</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <Tab.Navigator
@@ -59,3 +81,11 @@ export function TabNavigator() {
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  emptyScreen: { flex: 1, backgroundColor: surface.page },
+  emptyContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 14 },
+  emptyTitle: { fontFamily: fontFamily.display, fontSize: fontSize.lg, color: text.heading },
+  emptyBody: { fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.muted, textAlign: 'center', lineHeight: fontSize.sm * 1.5 },
+  emptyLogout: { fontFamily: fontFamily.bodyBold, fontSize: fontSize.sm, color: colors.error, marginTop: 6 },
+});

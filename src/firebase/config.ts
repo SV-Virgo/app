@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 // @ts-ignore - initializeAuth/getReactNativePersistence live under firebase/auth but
 // their RN-specific types lag the JS SDK; this is the documented RN setup.
-import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence, getAuth, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,3 +44,19 @@ export const db = (() => {
 })();
 
 export const storage = getStorage(app);
+
+// A second, isolated Firebase app instance used only to create new members'
+// Auth accounts (see firebase/invite.ts). Creating a user with the *primary*
+// auth instance would sign the admin out of their own session and into the
+// new account — there's no server (no Cloud Functions on the free Spark
+// plan) to do this safely instead, so this is the standard client-only
+// workaround: a throwaway, in-memory-only auth session that never persists
+// and is signed out immediately after each invite.
+const secondaryApp = getApps().find((a) => a.name === 'Secondary') ?? initializeApp(firebaseConfig, 'Secondary');
+export const secondaryAuth = (() => {
+  try {
+    return initializeAuth(secondaryApp, { persistence: inMemoryPersistence });
+  } catch {
+    return getAuth(secondaryApp);
+  }
+})();

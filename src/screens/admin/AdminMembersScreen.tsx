@@ -1,13 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { watchAllUsers, updateUserRole } from '../../firebase/users';
 import { watchRoles } from '../../firebase/roles';
+import { inviteMember } from '../../firebase/invite';
 import type { Role, UserProfile } from '../../types';
 import { Card } from '../../components/Card';
+import { Button } from '../../components/Button';
 import { InitialsAvatar } from '../../components/InitialsAvatar';
 import { colors, fontFamily, fontSize, radius, surface, text } from '../../theme/tokens';
+
+function firebaseAuthErrorMessage(err: unknown): string {
+  const code = (err as { code?: string })?.code ?? '';
+  if (code === 'auth/email-already-in-use') return 'Er bestaat al een account met dit e-mailadres.';
+  if (code === 'auth/invalid-email') return 'Dit e-mailadres is ongeldig.';
+  return 'Uitnodigen is mislukt. Probeer het nog eens.';
+}
 
 export function AdminMembersScreen() {
   const navigation = useNavigation();
@@ -16,10 +25,45 @@ export function AdminMembersScreen() {
   const [search, setSearch] = useState('');
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
 
+  const [inviting, setInviting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRoleId, setInviteRoleId] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+
   useEffect(() => watchAllUsers(setUsers), []);
   useEffect(() => watchRoles(setRoles), []);
+  useEffect(() => {
+    if (!inviteRoleId && roles.length > 0) {
+      setInviteRoleId(roles.find((r) => r.id === 'lid')?.id ?? roles[0].id);
+    }
+  }, [roles, inviteRoleId]);
 
   const filtered = users.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
+
+  async function handleInvite() {
+    if (!inviteName.trim() || !inviteEmail.trim() || !inviteRoleId) return;
+    setSubmitting(true);
+    setInviteError(null);
+    setInviteSuccess(null);
+    try {
+      await inviteMember({ name: inviteName, email: inviteEmail, roleId: inviteRoleId });
+      setInviteSuccess(
+        `${inviteName.trim()} kan inloggen met ${inviteEmail.trim()}. Er is een e-mail verstuurd om een wachtwoord in te stellen.`,
+      );
+      setInviteName('');
+      setInviteEmail('');
+    } catch (err) {
+      // Alert.alert is unreliable on web (react-native-web), so surface
+      // errors inline instead — and always log the real error for debugging.
+      console.error('inviteMember failed:', err);
+      setInviteError(firebaseAuthErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -36,6 +80,74 @@ export function AdminMembersScreen() {
         placeholderTextColor={colors.ink300}
         style={styles.search}
       />
+
+      <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+        {!inviting ? (
+          <Button
+            variant="secondary"
+            onPress={() => {
+              setInviting(true);
+              setInviteError(null);
+              setInviteSuccess(null);
+            }}
+          >
+            + Lid uitnodigen
+          </Button>
+        ) : (
+          <Card style={{ padding: 14, gap: 10 }}>
+            <TextInput
+              value={inviteName}
+              onChangeText={setInviteName}
+              placeholder="Naam"
+              placeholderTextColor={colors.ink300}
+              style={styles.inviteInput}
+            />
+            <TextInput
+              value={inviteEmail}
+              onChangeText={setInviteEmail}
+              placeholder="E-mailadres"
+              placeholderTextColor={colors.ink300}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.inviteInput}
+            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {roles.map((r) => (
+                <Pressable
+                  key={r.id}
+                  onPress={() => setInviteRoleId(r.id)}
+                  style={[styles.roleChoiceChip, inviteRoleId === r.id && styles.roleChoiceChipActive]}
+                >
+                  <Text style={[styles.roleChoiceLabel, inviteRoleId === r.id && styles.roleChoiceLabelActive]}>{r.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.inviteHint}>
+              Er wordt direct een account aangemaakt en een e-mail gestuurd waarmee dit lid zelf een wachtwoord instelt.
+            </Text>
+            {inviteError && <Text style={styles.inviteErrorText}>{inviteError}</Text>}
+            {inviteSuccess && <Text style={styles.inviteSuccessText}>{inviteSuccess}</Text>}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Button
+                variant="secondary"
+                onPress={() => {
+                  setInviting(false);
+                  setInviteError(null);
+                  setInviteSuccess(null);
+                }}
+                style={{ flex: 1 }}
+                disabled={submitting}
+              >
+                Sluiten
+              </Button>
+              <Button onPress={handleInvite} style={{ flex: 1 }} disabled={submitting || !inviteName.trim() || !inviteEmail.trim()}>
+                {submitting ? 'Bezig…' : 'Uitnodigen'}
+              </Button>
+            </View>
+            {submitting && <ActivityIndicator color={colors.blue600} />}
+          </Card>
+        )}
+      </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         <Card style={{ marginHorizontal: 20, overflow: 'hidden' }} noShadow>
@@ -110,4 +222,20 @@ const styles = StyleSheet.create({
   picker: { backgroundColor: surface.sunken, paddingVertical: 4 },
   pickerRow: { paddingVertical: 8, paddingHorizontal: 24 },
   pickerLabel: { fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.body },
+  inviteInput: {
+    borderWidth: 1.5,
+    borderColor: colors.ink150,
+    borderRadius: radius.sm,
+    padding: 10,
+    fontFamily: fontFamily.body,
+    fontSize: fontSize.sm,
+    color: text.body,
+  },
+  roleChoiceChip: { borderWidth: 1.5, borderColor: colors.ink150, borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: 12 },
+  roleChoiceChipActive: { backgroundColor: surface.brand, borderColor: surface.brand },
+  roleChoiceLabel: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: text.body },
+  roleChoiceLabelActive: { color: text.onBrand },
+  inviteHint: { fontFamily: fontFamily.body, fontSize: 12, color: text.muted, lineHeight: 17 },
+  inviteErrorText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.error },
+  inviteSuccessText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.success },
 });
