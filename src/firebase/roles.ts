@@ -1,4 +1,4 @@
-import { deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { FieldPath, deleteDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { collections, docRef, watchCollection } from './firestore';
 import type { Role } from '../types';
 import type { PermissionKey } from '../permissions/catalog';
@@ -24,10 +24,14 @@ export async function createRole(name: string, permissions: Partial<Record<Permi
 }
 
 export async function updateRolePermission(roleId: string, key: PermissionKey, value: boolean) {
-  await updateDoc(docRef('roles', roleId), {
-    [`permissions.${key}`]: value,
-    updatedAt: Date.now(),
-  });
+  // Every PermissionKey contains a literal dot (e.g. "screens.home"). The
+  // object-literal form of updateDoc treats a dotted string key as a nested
+  // field PATH ("permissions" -> "screens" -> "home"), not a single flat
+  // key named "screens.home" — so this has to use the FieldPath variadic
+  // form, where each segment is taken literally, to actually flip
+  // permissions["screens.home"] instead of silently writing to a different,
+  // nested field that nothing ever reads.
+  await updateDoc(docRef('roles', roleId), new FieldPath('permissions', key), value, 'updatedAt', Date.now());
 }
 
 export async function renameRole(roleId: string, name: string) {

@@ -2,15 +2,6 @@ import React from 'react';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { colors } from '../theme/tokens';
 
-export function BellIcon({ size = 22, color = colors.ink700 }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 3a6 6 0 00-6 6v3.5L4 16h16l-2-3.5V9a6 6 0 00-6-6z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M9.5 19a2.5 2.5 0 005 0" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
 export function LockIcon({ size = 12, color = colors.ink500 }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

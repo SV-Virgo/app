@@ -36,6 +36,7 @@ yarn-error.*
 
 # Firebase service account (used by scripts/seed.mjs & scripts/create-admin.mjs)
 serviceAccountKey.json
+*firebase-adminsdk*.json
 
 # typescript
 *.tsbuildinfo

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import {
   useFonts as useSpaceGrotesk,
   SpaceGrotesk_500Medium,
@@ -22,6 +23,18 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { surface } from './src/theme/tokens';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Without this, a notification that arrives while the app is open in the
+// foreground is received silently — no banner, no sound — which looks
+// exactly like notifications being broken.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 export default function App() {
   const [spaceLoaded] = useSpaceGrotesk({ SpaceGrotesk_500Medium, SpaceGrotesk_600SemiBold, SpaceGrotesk_700Bold });

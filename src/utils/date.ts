@@ -41,3 +41,24 @@ export function formatIsoDateShort(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return formatDutchDayShort(new Date(y, m - 1, d));
 }
+
+/** { day: "23", month: "sep" } — the two display fields AgendaEvent stores. */
+export function agendaDayMonth(date: Date): { day: string; month: string } {
+  return { day: String(date.getDate()), month: MONTHS_SHORT[date.getMonth()] };
+}
+
+/** "10 – 12 sep" (same month) or "28 aug – 2 sep" (crosses a month) — for multi-day activities. */
+export function formatDateRange(start: Date, end: Date): string {
+  const a = agendaDayMonth(start);
+  const b = agendaDayMonth(end);
+  return a.month === b.month ? `${a.day} – ${b.day} ${b.month}` : `${a.day} ${a.month} – ${b.day} ${b.month}`;
+}
+
+/** "zojuist" / "2 uur geleden" / "3 dagen geleden" — for feed posts and comments. */
+export function formatRelativeTime(ts: number): string {
+  const hours = Math.floor((Date.now() - ts) / 3_600_000);
+  if (hours < 1) return 'zojuist';
+  if (hours < 24) return `${hours} uur geleden`;
+  const days = Math.floor(hours / 24);
+  return `${days} dag${days === 1 ? '' : 'en'} geleden`;
+}

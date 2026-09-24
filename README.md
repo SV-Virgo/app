@@ -62,6 +62,51 @@ eas build --platform android
 ```
 Voor een TestFlight/Play Store-release: `eas submit --platform ios` / `eas submit --platform android` (vereist een Apple Developer- en Google Play Console-account).
 
+## Pushmeldingen setup
+
+Voordat pushmeldingen iets doen, eenmalig:
+
+```
+npm install -g eas-cli
+eas login
+eas init
+```
+`eas init` schrijft een `extra.eas.projectId` in `app.json` — zonder dat ID slaat het ophalen van een pushtoken stil over (geen crash, gewoon geen meldingen op dat toestel).
+
+**Belangrijk**: Expo Go op dit SDK ondersteunt geen remote pushmeldingen meer. Testen moet via een EAS development of production build (`eas build`), niet via `npm start` + Expo Go.
+
+Er zijn vier meldingscategorieën, elk lid zet ze aan/uit onder Profiel → Meldingen (standaard allemaal aan):
+- **Aankondigingen** — een hoofdfeed-post die als aankondiging (pinned) is geplaatst
+- **Hoofdfeed** — een gewone (niet-pinned) hoofdfeed-post
+- **Losse meldingen** — vrije tekst die Bestuur stuurt (permissie `notifications.sendCustom`, scherm "Melding versturen" via Profiel)
+- **Soos is open** — vaste melding die de Sooscommissie stuurt (permissie `notifications.sendSoosOpen`, knop op het Soos-scherm)
+
+Het versturen gebeurt rechtstreeks vanuit de app naar Expo's push-endpoint (`src/firebase/notifications.ts`) — er is geen Cloud Function voor nodig, in tegenstelling tot de e-mailflow. Dat heeft wel een keerzijde: elk ingelogd lid kan via de Firestore SDK sowieso alle `pushTokens` uitlezen (nodig voor bv. de ledenlijst elders in de app) en zou dus, met wat technische kennis, buiten de app om rechtstreeks naar Expo's endpoint kunnen posten — de permissies hierboven bepalen alleen welke knop je in de app ziet, ze zijn geen harde garantie. Voor een kleine, vertrouwde vereniging is dat een aanvaardbaar risico; een waterdichte oplossing vereist een Cloud Function (dezelfde Blaze-afweging als bij de e-mailflow) die als enige de pushtokens leest en verstuurt.
+
+## Aanmeldingen & betalen (SumUp)
+
+Een activiteit kan, ná aanmaken, een aanmeldformulier krijgen (permissie `agenda.manageRegistration`, knop "Aanmelding" bij het evenement in Agenda beheren). Elke aanmelding vraagt altijd naam/adres/postcode/woonplaats, plus optionele custom vragen (tekst, meerkeuze, ja/nee). Is er een bedrag ingesteld, dan betaalt het lid na het aanmelden via SumUp.
+
+De SumUp-integratie staat in `functions/` (Cloud Functions), niet in de app zelf: een SumUp API-key/merchant-secret in de mobiele app zou uit de gebundelde code te halen zijn, dus een checkout aanmaken en een betaling bevestigen gebeurt altijd server-side.
+
+**Eenmalige setup** (vereist het betaalde **Blaze**-plan voor dit Firebase-project — Cloud Functions draaien niet op het gratis Spark-plan; dit moet je zelf aanzetten in de Firebase console, ik kan dat niet voor je doen):
+
+```
+cd functions && npm install && cd ..
+npx firebase-tools login
+npx firebase-tools use <jouw-project-id>
+npx firebase-tools functions:secrets:set SUMUP_API_KEY
+npx firebase-tools functions:secrets:set SUMUP_MERCHANT_CODE
+npx firebase-tools deploy --only functions
+npx firebase-tools deploy --only firestore:rules
+```
+
+`SUMUP_API_KEY` is de personal API key uit je SumUp-dashboard (Developers → API keys), `SUMUP_MERCHANT_CODE` de merchant code die daarbij hoort. Na `deploy` staat er ook een webhook-URL in de output voor `sumupWebhook` — zet die in het SumUp-dashboard onder Webhooks, zodat een betaling die binnenkomt terwijl iemand de app al gesloten heeft alsnog verwerkt wordt.
+
+De app roept twee callable functions aan (`src/firebase/payments.ts`): `createSumupCheckout` (maakt de checkout aan, servert het bedrag zelf op uit de aanmelding — de client stuurt nooit een bedrag mee) en `confirmSumupPayment` (herbevestigt de betaalstatus bij SumUp zelf, ná het in-app kaart-widget succes meldt — de widget-callback alleen is geen bewijs van betaling). Het kaart-invoerformulier zelf is SumUp's eigen gehoste widget, geladen in een WebView (`src/components/SumupCheckoutModal.tsx`) — er komt dus nooit een kaartnummer door de app of de Cloud Function heen.
+
+`registrationSubmissions.paymentStatus` mag van clientside nooit rechtstreeks op `'paid'` gezet worden (zie `firestore.rules`) — alleen de Cloud Function mag dat, via de Admin SDK, en pas nadat die zelf bij SumUp heeft geverifieerd dat de betaling ook echt gelukt is.
+
 ## App-icoon
 
 `assets/icon.png`, `assets/android-icon-*.png` en `assets/splash-icon.png` zijn nog de standaard Expo-placeholders. Vervang deze door een icoon gebaseerd op `assets/brand/logo-ink.png` / `logo-white.png` voordat je een build voor de stores maakt.
@@ -75,22 +120,22 @@ Voor een TestFlight/Play Store-release: `eas submit --platform ios` / `eas submi
 ```
 src/
   theme/          design tokens (kleuren, typografie, spacing) — 1:1 uit het Claude Design export
-  permissions/     de permissie-catalogus (screens.*, feed.*, ruimtes.*, planning.*, soos.*, roles.*, members.*)
+  permissions/     de permissie-catalogus (screens.*, feed.*, ruimtes.*, planning.*, soos.*, agenda.*, roles.*, members.*)
   types/           gedeelde TypeScript-types
-  firebase/        Firebase config + service-laag (auth, roles, users, feed, rooms, planning, soos, agenda)
-  state/           AuthContext (huidige gebruiker, rol, hasPermission())
+  firebase/        Firebase config + service-laag (auth, roles, users, feed, rooms, planning, soos, agenda, registrations, payments, notifications)
+  state/           AuthContext (huidige gebruiker, rol, hasPermission()) + usePushTokenRegistration
   navigation/      RootNavigator (auth-gate) + TabNavigator (tabs gefilterd op screens.* permissie)
   components/      gedeelde UI-componenten
-  screens/         Login, Home, Ruimtes, Planning, Soos, Agenda, Profiel
-  screens/admin/   Rollen beheren, Leden beheren
+  screens/         Login, Home, Ruimtes, Planning, Soos, Agenda, EventRegistration, Profiel
+  screens/admin/   Rollen beheren, Leden beheren, Agenda beheren, EventRegistration (formulier + aanmeldingen)
 scripts/
   seed.mjs          seedt rollen (Bestuur/Lid), ruimtes en prijslijst
   create-admin.mjs  maakt een Bestuur-account aan
+functions/          Cloud Functions — SumUp checkout/betaalstatus (zie "Aanmeldingen & betalen" hierboven)
 firestore.rules     server-side spiegel van de permissiechecks
 ```
 
 ## Openstaande keuzes / vervolgstappen
 
-- **Ledenuitnodigingen**: nu via `create-admin.mjs` (CLI, service-account). Voor een prettigere flow: een Cloud Function die "Leden beheren" kan aanroepen om direct vanuit de app een account + e-mailuitnodiging aan te maken.
 - **Foto's / avatars**: Firebase Storage is al geconfigureerd (`src/firebase/config.ts`) maar er is nog geen upload-UI; feed-foto's en profielfoto's zijn nu een `photoUrl`/`avatarUrl` string-veld.
-- **Pushmeldingen** voor nieuwe updates/aankondigingen: nog niet aangesloten (Expo Notifications + een Cloud Function trigger op nieuwe `feed`-documenten zou dit afmaken).
+- **Server-side pushmeldingen**: zie de beveiligingskanttekening onder "Pushmeldingen setup" hierboven — een Cloud Function zou dit sluitend maken.

@@ -33,48 +33,53 @@ export function LoginScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    // 'height' on Android rather than relying on the native windowSoftInputMode
+    // resize config — that alone wasn't reliably resizing the layout here,
+    // likely due to how react-native-screens presents each stack screen.
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.hero}>
         <Image source={require('../../assets/brand/logo-white.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.tagline}>Vrienden voor het leven</Text>
       </View>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, shadow.lg]}>
-          <View style={{ gap: 4 }}>
-            <Text style={styles.welcome}>Welkom terug</Text>
-            <Text style={styles.sub}>Log in met je lidmaatschapsaccount</Text>
-          </View>
-          <Input
-            label="E-mailadres"
-            placeholder="Mail@domain.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <Input
-            label="Wachtwoord"
-            placeholder="••••••••"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <View style={{ alignItems: 'center', gap: 14, marginTop: 6 }}>
-            <Button onPress={handleLogin} disabled={submitting || !email || !password}>
-              {submitting ? 'Bezig…' : 'Inloggen'}
-            </Button>
-            <Text style={styles.link}>Nog geen account? Meld je aan bij het bestuur</Text>
-          </View>
-        </SafeAreaView>
-      </KeyboardAvoidingView>
-    </View>
+      <SafeAreaView edges={['bottom']} style={[styles.sheet, shadow.lg]}>
+        <View style={{ gap: 4 }}>
+          <Text style={styles.welcome}>Welkom terug</Text>
+          <Text style={styles.sub}>Log in met je lidmaatschapsaccount</Text>
+        </View>
+        <Input
+          label="E-mailadres"
+          placeholder="Mail@domain.com"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <Input
+          label="Wachtwoord"
+          placeholder="••••••••"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={{ alignItems: 'center', gap: 14, marginTop: 6 }}>
+          <Button onPress={handleLogin} disabled={submitting || !email || !password}>
+            {submitting ? 'Bezig…' : 'Inloggen'}
+          </Button>
+          <Text style={styles.link}>Nog geen account? Meld je aan bij het bestuur</Text>
+        </View>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: surface.brand, justifyContent: 'flex-end' },
-  hero: { alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: 90, paddingBottom: 20, paddingHorizontal: 32 },
+  screen: { flex: 1, backgroundColor: surface.brand },
+  // flex: 1 so the blue hero always fills whatever space is left above the
+  // card — without it, this View only takes its natural content height,
+  // which can leave the card looking like it's pinned to the top with
+  // little or no blue showing on taller screens.
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: 40, paddingBottom: 20, paddingHorizontal: 32 },
   logo: { height: 56, width: 160 },
   tagline: { fontFamily: fontFamily.script, fontSize: fontSize.lg, color: colors.cream50, textAlign: 'center' },
   sheet: {

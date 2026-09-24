@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { watchAllUsers, updateUserRole } from '../../firebase/users';
+import { watchAllUsers, updateUserRole, updateCommitteeIdentities, updateMemberSince } from '../../firebase/users';
 import { watchRoles } from '../../firebase/roles';
 import { inviteMember } from '../../firebase/invite';
 import type { Role, UserProfile } from '../../types';
@@ -24,6 +24,10 @@ export function AdminMembersScreen() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState('');
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null);
+  const [committeeDraftFor, setCommitteeDraftFor] = useState<string | null>(null);
+  const [committeeDraft, setCommitteeDraft] = useState('');
+  const [memberSinceDraftFor, setMemberSinceDraftFor] = useState<string | null>(null);
+  const [memberSinceDraft, setMemberSinceDraft] = useState('');
 
   const [inviting, setInviting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -42,6 +46,18 @@ export function AdminMembersScreen() {
   }, [roles, inviteRoleId]);
 
   const filtered = users.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
+
+  // Blank/invalid input just reverts the draft to whatever's actually saved
+  // (there's no "clear" — memberSince is a plain required number, no way
+  // to write "unset" back to it).
+  async function saveMemberSince(uid: string, value: string) {
+    const trimmed = value.trim();
+    const year = Number(trimmed);
+    if (trimmed && Number.isInteger(year) && year >= 1900 && year <= 2100) {
+      await updateMemberSince(uid, year);
+    }
+    setMemberSinceDraftFor(null);
+  }
 
   async function handleInvite() {
     if (!inviteName.trim() || !inviteEmail.trim() || !inviteRoleId) return;
@@ -168,6 +184,7 @@ export function AdminMembersScreen() {
                 </View>
                 {openPickerFor === u.uid && (
                   <View style={styles.picker}>
+                    <Text style={styles.pickerSectionLabel}>Rol</Text>
                     {roles.map((r) => (
                       <Pressable
                         key={r.id}
@@ -182,6 +199,51 @@ export function AdminMembersScreen() {
                         </Text>
                       </Pressable>
                     ))}
+
+                    <Text style={styles.pickerSectionLabel}>Commissies (mag posten als)</Text>
+                    <View style={styles.committeeChips}>
+                      {(u.committeeIdentities ?? []).map((c) => (
+                        <View key={c} style={styles.chip}>
+                          <Text style={styles.chipText}>{c}</Text>
+                          <Pressable
+                            onPress={() => updateCommitteeIdentities(u.uid, (u.committeeIdentities ?? []).filter((x) => x !== c))}
+                          >
+                            <Text style={styles.chipText}>×</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                      <TextInput
+                        value={committeeDraftFor === u.uid ? committeeDraft : ''}
+                        onChangeText={(v) => {
+                          setCommitteeDraftFor(u.uid);
+                          setCommitteeDraft(v);
+                        }}
+                        onSubmitEditing={() => {
+                          const name = committeeDraft.trim();
+                          if (name) updateCommitteeIdentities(u.uid, [...(u.committeeIdentities ?? []), name]);
+                          setCommitteeDraft('');
+                        }}
+                        placeholder="+ Commissie toevoegen"
+                        placeholderTextColor={colors.ink300}
+                        style={styles.committeeInput}
+                      />
+                    </View>
+
+                    <Text style={styles.pickerSectionLabel}>Lid sinds</Text>
+                    <TextInput
+                      value={memberSinceDraftFor === u.uid ? memberSinceDraft : u.memberSince ? String(u.memberSince) : ''}
+                      onChangeText={(v) => {
+                        setMemberSinceDraftFor(u.uid);
+                        setMemberSinceDraft(v.replace(/[^0-9]/g, '').slice(0, 4));
+                      }}
+                      onBlur={() => {
+                        if (memberSinceDraftFor === u.uid) saveMemberSince(u.uid, memberSinceDraft);
+                      }}
+                      placeholder="Bijv. 2021"
+                      placeholderTextColor={colors.ink300}
+                      keyboardType="number-pad"
+                      style={styles.yearInput}
+                    />
                   </View>
                 )}
               </View>
@@ -222,6 +284,44 @@ const styles = StyleSheet.create({
   picker: { backgroundColor: surface.sunken, paddingVertical: 4 },
   pickerRow: { paddingVertical: 8, paddingHorizontal: 24 },
   pickerLabel: { fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.body },
+  pickerSectionLabel: {
+    fontFamily: fontFamily.bodyBold,
+    fontSize: 11,
+    color: text.muted,
+    textTransform: 'uppercase',
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  committeeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 24, paddingBottom: 10 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.blue100, borderRadius: radius.pill, paddingVertical: 5, paddingHorizontal: 10 },
+  chipText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.blue700 },
+  committeeInput: {
+    borderWidth: 1.5,
+    borderColor: colors.ink300,
+    borderStyle: 'dashed',
+    borderRadius: radius.pill,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    fontFamily: fontFamily.body,
+    fontSize: 12,
+    color: text.body,
+    minWidth: 140,
+  },
+  yearInput: {
+    marginHorizontal: 24,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+    minWidth: 90,
+    borderWidth: 1.5,
+    borderColor: colors.ink150,
+    borderRadius: radius.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    fontFamily: fontFamily.body,
+    fontSize: fontSize.sm,
+    color: text.body,
+  },
   inviteInput: {
     borderWidth: 1.5,
     borderColor: colors.ink150,

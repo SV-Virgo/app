@@ -10,6 +10,7 @@ interface Props {
   mode: 'date' | 'time';
   onChange: (date: Date) => void;
   minimumDate?: Date;
+  maximumDate?: Date;
 }
 
 /**
@@ -18,7 +19,7 @@ interface Props {
  * text caused (unpredictable width from typed content) and invalid/unparsable
  * values.
  */
-export function PickerField({ label, value, mode, onChange, minimumDate }: Props) {
+export function PickerField({ label, value, mode, onChange, minimumDate, maximumDate }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -49,7 +50,7 @@ export function PickerField({ label, value, mode, onChange, minimumDate }: Props
       </Pressable>
 
       {open && Platform.OS === 'android' && (
-        <DateTimePicker value={value} mode={mode} display="default" onChange={handleChange} minimumDate={minimumDate} is24Hour />
+        <DateTimePicker value={value} mode={mode} display="default" onChange={handleChange} minimumDate={minimumDate} maximumDate={maximumDate} is24Hour />
       )}
 
       {open && Platform.OS !== 'android' && (
@@ -62,6 +63,7 @@ export function PickerField({ label, value, mode, onChange, minimumDate }: Props
                 display="spinner"
                 onChange={handleChange}
                 minimumDate={minimumDate}
+                maximumDate={maximumDate}
                 is24Hour
                 textColor={text.body as unknown as string}
               />

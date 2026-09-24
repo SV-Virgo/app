@@ -20,6 +20,22 @@ service cloud.firestore {
         get(/databases/$(database)/documents/roles/$(myRoleId())).data.permissions[key] == true;
     }
 
+    // Committee names the signed-in member is allowed to post the hoofdfeed
+    // under (e.g. "Activiteitencommissie") — a per-person grant, not tied to
+    // their permission role, so a plain get() with a safe default.
+    function myCommitteeIdentities() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('committeeIdentities', []);
+    }
+
+    function postAllowsComments(postId) {
+      let post = get(/databases/$(database)/documents/feed/$(postId)).data;
+      return post.feedType == 'leden' || post.commentsEnabled == true;
+    }
+
+    function isPostAuthor(postId) {
+      return get(/databases/$(database)/documents/feed/$(postId)).data.authorUid == request.auth.uid;
+    }
+
     // Roles: everyone signed in can read the catalog (needed to resolve their
     // own permissions and to show role names in the UI); only a role with
     // roles.manage can create, rename, retune or delete a role.
@@ -30,21 +46,70 @@ service cloud.firestore {
 
     // Users: everyone signed in can read the member list (needed for linking
     // members to a booking, assigning shifts, showing initials, etc). A
-    // member can update their own profile but not their own roleId — only
-    // members.manage can change roleId or create/delete profiles (accounts
-    // are provisioned by Bestuur, not self-signup, per the design).
+    // member can update their own profile but not their own roleId or
+    // committeeIdentities (the latter is what lets someone post the
+    // hoofdfeed as a committee — a grant, not a self-service setting) —
+    // only members.manage can change those, or create/delete profiles
+    // (accounts are provisioned by Bestuur, not self-signup, per the design).
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if hasPermission('members.manage');
       allow update: if hasPermission('members.manage') ||
         (request.auth.uid == uid &&
-         request.resource.data.roleId == resource.data.roleId);
+         request.resource.data.roleId == resource.data.roleId &&
+         request.resource.data.get('committeeIdentities', []) == resource.data.get('committeeIdentities', []));
       allow delete: if hasPermission('members.manage');
     }
 
+    // Two feeds share this collection, told apart by feedType. Leden posts
+    // just need feed.postMembers. Hoofdfeed posts either speak as "Bestuur"
+    // (needs feed.postMain) or as a committee name the poster has been
+    // granted in their own user doc — never a name they typed themselves.
     match /feed/{postId} {
       allow read: if signedIn();
-      allow create, update, delete: if hasPermission('feed.post');
+      allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid && (
+        (request.resource.data.feedType == 'leden' && hasPermission('feed.postMembers')) ||
+        (request.resource.data.feedType == 'hoofd' && (
+          (request.resource.data.displayName == 'Bestuur' && hasPermission('feed.postMain')) ||
+          request.resource.data.displayName in myCommitteeIdentities()
+        ))
+      );
+      // Editing your own post (including un-pinning it), or moderating
+      // anyone's — moderating a ledenfeed post only ever sets deleted:true
+      // (soft delete); a hoofdfeed post is instead fully removed by its
+      // author or a moderator (see feed.deleteFeedPost), which is why
+      // delete below also allows the post's own author, not just moderators.
+      allow update: if signedIn() && (resource.data.authorUid == request.auth.uid || hasPermission('feed.moderate'));
+      allow delete: if signedIn() && (resource.data.authorUid == request.auth.uid || hasPermission('feed.moderate'));
+    }
+
+    match /feedComments/{commentId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid &&
+        hasPermission('feed.postMembers') && postAllowsComments(request.resource.data.postId);
+      allow update: if signedIn() && (resource.data.authorUid == request.auth.uid || hasPermission('feed.moderate'));
+      // Hard delete is only ever used to cascade-clean a hoofdfeed post's
+      // comments when that post itself is deleted — allowed for the parent
+      // post's author (deleting their own post) besides moderators.
+      allow delete: if signedIn() && (
+        resource.data.authorUid == request.auth.uid ||
+        hasPermission('feed.moderate') ||
+        isPostAuthor(resource.data.postId)
+      );
+    }
+
+    // Emoji reactions are open to anyone signed in, same as agendaRsvps —
+    // no permission gate, just "only ever touch your own reaction slot".
+    // Deleting someone else's reaction is only allowed as part of cascading
+    // a post's own deletion (see feed.deleteFeedPost).
+    match /feedReactions/{reactionId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && (
+        resource.data.uid == request.auth.uid ||
+        hasPermission('feed.moderate') ||
+        isPostAuthor(resource.data.postId)
+      );
     }
 
     // Rooms are seeded (see scripts/seed.ts) and edited outside the app for now.
@@ -82,7 +147,12 @@ service cloud.firestore {
 
     match /assignments/{assignmentId} {
       allow read: if signedIn();
-      allow create, update, delete: if hasPermission('planning.assignMembers');
+      allow create, update: if hasPermission('planning.assignMembers');
+      // Delete is also allowed by planning.setSlots — removing a slot
+      // cascades to any assignments on it (see planning.removePlanningSlot),
+      // so whoever can remove a slot must also be able to clean up the
+      // assignments that were on it, even without planning.assignMembers.
+      allow delete: if hasPermission('planning.assignMembers') || hasPermission('planning.setSlots');
     }
 
     match /priceCategories/{categoryId} {
@@ -90,9 +160,47 @@ service cloud.firestore {
       allow write: if hasPermission('soos.managePrices');
     }
 
+    match /soosInfo/{docId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('soos.managePrices');
+    }
+
     match /agendaEvents/{eventId} {
       allow read: if signedIn();
       allow write: if hasPermission('agenda.manage');
+    }
+
+    // Any signed-in member can say whether they're coming to an event — this
+    // isn't gated by a permission, just by only ever touching your own RSVP.
+    match /agendaRsvps/{rsvpId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Doc id == eventId (see src/firebase/registrations.ts) — everyone
+    // signed in needs to read it to know whether an event has a form at
+    // all and to fill it in; only agenda.manageRegistration can create it
+    // (and only after the event itself already exists, enforced in the UI).
+    match /registrationForms/{eventId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('agenda.manageRegistration');
+    }
+
+    // Doc id == `${eventId}_${uid}`. A member can only ever create their own
+    // submission, never someone else's, and never with a paymentStatus other
+    // than the two states this app itself would set client-side — becoming
+    // 'paid' only ever happens via the SumUp Cloud Function's Admin SDK
+    // write, which bypasses these rules entirely, so `allow update: if false`
+    // here is what actually keeps a client from forging a paid status.
+    match /registrationSubmissions/{submissionId} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || hasPermission('agenda.manageRegistration'));
+      allow create: if signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        submissionId == request.resource.data.eventId + '_' + request.auth.uid &&
+        request.resource.data.paymentStatus in ['not_required', 'pending'];
+      allow update: if false;
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || hasPermission('agenda.manageRegistration'));
     }
   }
 }

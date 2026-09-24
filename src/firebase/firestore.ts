@@ -15,6 +15,8 @@ export const collections = {
   roles: collection(db, 'roles'),
   users: collection(db, 'users'),
   feed: collection(db, 'feed'),
+  feedComments: collection(db, 'feedComments'),
+  feedReactions: collection(db, 'feedReactions'),
   rooms: collection(db, 'rooms'),
   bookings: collection(db, 'bookings'),
   planningWeeks: collection(db, 'planningWeeks'),
@@ -22,7 +24,11 @@ export const collections = {
   preferences: collection(db, 'preferences'),
   assignments: collection(db, 'assignments'),
   priceCategories: collection(db, 'priceCategories'),
+  soosInfo: collection(db, 'soosInfo'),
   agendaEvents: collection(db, 'agendaEvents'),
+  agendaRsvps: collection(db, 'agendaRsvps'),
+  registrationForms: collection(db, 'registrationForms'),
+  registrationSubmissions: collection(db, 'registrationSubmissions'),
 };
 
 /** Subscribes to a query/collection and maps each snapshot to typed docs (id included). */

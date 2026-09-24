@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
-import { watchRooms, watchBookings, watchMyBookings, createBooking, cancelBooking } from '../firebase/rooms';
+import { watchRooms, watchBookings, createBooking, cancelBooking } from '../firebase/rooms';
 import { watchAllUsers } from '../firebase/users';
 import type { Booking, Room, UserProfile } from '../types';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -19,6 +19,21 @@ function setHours(date: Date, hours: number, minutes: number): Date {
   return d;
 }
 
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// Treats "tot" <= "van" as spanning past midnight (e.g. 22:00–02:00) rather
+// than an invalid range, so overnight bookings still overlap-check correctly.
+function timeRangesOverlap(aFrom: string, aTo: string, bFrom: string, bTo: string): boolean {
+  const aStart = toMinutes(aFrom);
+  const aEnd = toMinutes(aTo) <= aStart ? toMinutes(aTo) + 24 * 60 : toMinutes(aTo);
+  const bStart = toMinutes(bFrom);
+  const bEnd = toMinutes(bTo) <= bStart ? toMinutes(bTo) + 24 * 60 : toMinutes(bTo);
+  return aStart < bEnd && bStart < aEnd;
+}
+
 export function RuimtesScreen() {
   const { profile, hasPermission } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -30,6 +45,7 @@ export function RuimtesScreen() {
   const [to, setTo] = useState(() => setHours(new Date(), 21, 0));
   const [linked, setLinked] = useState<UserProfile[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   const canBook = hasPermission('ruimtes.book');
   const canLink = hasPermission('ruimtes.linkMembers');
@@ -37,10 +53,11 @@ export function RuimtesScreen() {
 
   useEffect(() => watchRooms(setRooms), []);
   useEffect(() => watchAllUsers(setAllUsers), []);
-  useEffect(() => {
-    if (!profile) return;
-    return canCancelAny ? watchBookings(setBookings) : watchMyBookings(profile.uid, setBookings);
-  }, [profile, canCancelAny]);
+  // Everyone who can see this tab sees every booking, not just their own —
+  // otherwise there's no way to tell whether a room is actually free before
+  // booking it. Whether you can *cancel* someone else's booking is a
+  // separate permission, checked per-row below.
+  useEffect(() => watchBookings(setBookings), []);
 
   const bookableRooms = useMemo(
     () => rooms.filter((r) => !r.bestuurOnly || hasPermission('ruimtes.bookFysio')),
@@ -50,15 +67,32 @@ export function RuimtesScreen() {
     () => rooms.filter((r) => r.bestuurOnly && !hasPermission('ruimtes.bookFysio')),
     [rooms, hasPermission],
   );
+  const sortedBookings = useMemo(
+    () => [...bookings].sort((a, b) => (a.date + a.from).localeCompare(b.date + b.from)),
+    [bookings],
+  );
 
   async function submitBooking() {
     if (!selectedRoom || !profile) return;
+    setBookingError(null);
+    const dateIso = toIsoDate(date);
+    const fromStr = formatTime(from);
+    const toStr = formatTime(to);
+
+    const conflict = bookings.find(
+      (b) => b.roomId === selectedRoom.id && b.date === dateIso && timeRangesOverlap(fromStr, toStr, b.from, b.to),
+    );
+    if (conflict) {
+      setBookingError(`${selectedRoom.name} is dan al bezet: ${conflict.from} – ${conflict.to} (${conflict.createdByName}).`);
+      return;
+    }
+
     await createBooking({
       roomId: selectedRoom.id,
       roomName: selectedRoom.name,
-      date: toIsoDate(date),
-      from: formatTime(from),
-      to: formatTime(to),
+      date: dateIso,
+      from: fromStr,
+      to: toStr,
       createdByUid: profile.uid,
       createdByName: profile.name,
       linkedMembers: linked.map((u) => ({
@@ -92,6 +126,8 @@ export function RuimtesScreen() {
                 {[...bookableRooms, ...lockedRooms].map((room) => {
                   const locked = lockedRooms.includes(room);
                   const selected = selectedRoom?.id === room.id;
+                  const dateIso = toIsoDate(date);
+                  const busyThatDay = bookings.filter((b) => b.roomId === room.id && b.date === dateIso);
                   return (
                     <Pressable
                       key={room.id}
@@ -110,6 +146,11 @@ export function RuimtesScreen() {
                       <View style={{ flex: 1, gap: 1 }}>
                         <Text style={styles.roomName}>{room.name}</Text>
                         <Text style={styles.roomMeta}>{room.meta}</Text>
+                        {busyThatDay.length > 0 && (
+                          <Text style={styles.roomBusy}>
+                            Bezet {busyThatDay.map((b) => `${b.from}–${b.to}`).join(', ')}
+                          </Text>
+                        )}
                       </View>
                       {locked && (
                         <View style={styles.lockRow}>
@@ -166,6 +207,8 @@ export function RuimtesScreen() {
                 </View>
               )}
 
+              {bookingError && <Text style={styles.error}>{bookingError}</Text>}
+
               <Button onPress={submitBooking} disabled={!selectedRoom}>
                 Reserveren
               </Button>
@@ -173,25 +216,31 @@ export function RuimtesScreen() {
           </>
         )}
 
-        <Text style={styles.sectionLabel}>{canCancelAny ? 'Alle reserveringen' : 'Mijn reserveringen'}</Text>
+        <Text style={styles.sectionLabel}>Alle reserveringen</Text>
         <Card style={{ marginHorizontal: 20, overflow: 'hidden' }} noShadow>
           {bookings.length === 0 && (
             <Text style={{ padding: 16, fontFamily: fontFamily.body, color: text.muted }}>Nog geen reserveringen.</Text>
           )}
-          {bookings.map((b) => (
-            <View key={b.id} style={styles.bookingRow}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.roomName}>{b.roomName}</Text>
-                <Text style={styles.bookingMeta}>{formatIsoDateShort(b.date)} · {b.from} – {b.to}</Text>
-                {b.linkedMembers.length > 0 && (
-                  <Text style={styles.bookingMeta}>Met {b.linkedMembers.map((m) => m.name).join(', ')}</Text>
+          {sortedBookings.map((b) => {
+            const canCancelThis = canCancelAny || b.createdByUid === profile?.uid;
+            return (
+              <View key={b.id} style={styles.bookingRow}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.roomName}>{b.roomName}</Text>
+                  <Text style={styles.bookingMeta}>{formatIsoDateShort(b.date)} · {b.from} – {b.to}</Text>
+                  <Text style={styles.bookingMeta}>
+                    {b.createdByUid === profile?.uid ? 'Door jou' : `Door ${b.createdByName}`}
+                    {b.linkedMembers.length > 0 ? ` · met ${b.linkedMembers.map((m) => m.name).join(', ')}` : ''}
+                  </Text>
+                </View>
+                {canCancelThis && (
+                  <Pressable onPress={() => cancelBooking(b.id)}>
+                    <Text style={styles.cancel}>Annuleren</Text>
+                  </Pressable>
                 )}
               </View>
-              <Pressable onPress={() => cancelBooking(b.id)}>
-                <Text style={styles.cancel}>Annuleren</Text>
-              </Pressable>
-            </View>
-          ))}
+            );
+          })}
         </Card>
       </ScrollView>
     </SafeAreaView>
@@ -227,6 +276,7 @@ const styles = StyleSheet.create({
   dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5 },
   roomName: { fontFamily: fontFamily.displaySemibold, fontSize: fontSize.sm, color: text.heading },
   roomMeta: { fontFamily: fontFamily.body, fontSize: 11, color: text.muted },
+  roomBusy: { fontFamily: fontFamily.bodySemibold, fontSize: 11, color: colors.error },
   lockRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   lockLabel: { fontFamily: fontFamily.bodySemibold, fontSize: 11, color: text.muted },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -237,4 +287,5 @@ const styles = StyleSheet.create({
   bookingRow: { flexDirection: 'row', gap: 10, padding: 14, borderBottomWidth: 1.5, borderBottomColor: colors.ink150 },
   bookingMeta: { fontFamily: fontFamily.body, fontSize: 11, color: text.muted },
   cancel: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.error },
+  error: { fontFamily: fontFamily.body, fontSize: fontSize.sm, color: colors.error },
 });

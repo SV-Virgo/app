@@ -24,3 +24,11 @@ export async function createUserProfile(profile: UserProfile) {
 export async function updateUserRole(uid: string, roleId: string) {
   await updateDoc(docRef('users', uid), { roleId });
 }
+
+export async function updateCommitteeIdentities(uid: string, committeeIdentities: string[]) {
+  await updateDoc(docRef('users', uid), { committeeIdentities });
+}
+
+export async function updateMemberSince(uid: string, memberSince: number) {
+  await updateDoc(docRef('users', uid), { memberSince });
+}

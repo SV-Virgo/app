@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+  <title>Virgo — Betalen</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: -apple-system, sans-serif; background: #ffffff; }
+    #sumup-card { min-height: 300px; }
+  </style>
+</head>
+<body>
+  <div id="sumup-card"></div>
+  <script src="https://gateway.sumup.com/gateway/ecom/card/v2/sdk.js"></script>
+  <script>
+    // Served from Firebase Hosting (not injected as inline WebView HTML)
+    // specifically so this page has a real, stable domain — Apple Pay and
+    // Google Pay both require domain verification against a genuine hosted
+    // origin, which an inline `source={{ html }}` WebView can't provide.
+    // See src/components/SumupCheckoutModal.tsx.
+    function post(message) {
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message));
+    }
+
+    var params = new URLSearchParams(window.location.search);
+    var checkoutId = params.get('checkoutId');
+
+    // Google's merchantId is issued after registering this exact hosting
+    // domain in the Google Pay & Wallet Console — see
+    // https://developer.sumup.com/online-payments/apm/google-pay/. Leave
+    // GOOGLE_PAY_MERCHANT_ID blank until that's done; the widget just
+    // shows card entry (today's behavior) until it's filled in. Apple Pay
+    // needs no equivalent mount option — it renders automatically as an
+    // APM once the domain is registered with Apple and enabled in the
+    // SumUp Dashboard (Settings > For developers > Payment wallets).
+    var GOOGLE_PAY_MERCHANT_ID = '';
+    var GOOGLE_PAY_MERCHANT_NAME = 'SV Virgo';
+
+    if (!checkoutId) {
+      post({ type: 'error', body: 'missing checkoutId' });
+    } else {
+      try {
+        SumUpCard.mount(Object.assign({
+          id: 'sumup-card',
+          checkoutId: checkoutId,
+          onResponse: function (type, body) {
+            post({ type: type, body: body });
+          },
+        }, GOOGLE_PAY_MERCHANT_ID ? {
+          googlePay: { merchantId: GOOGLE_PAY_MERCHANT_ID, merchantName: GOOGLE_PAY_MERCHANT_NAME },
+        } : {}));
+      } catch (e) {
+        post({ type: 'error', body: String(e) });
+      }
+    }
+  </script>
+</body>
+</html>

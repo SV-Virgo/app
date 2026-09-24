@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, updateProfile } from 'firebase/auth';
 import { auth, secondaryAuth } from './config';
 import { createUserProfile } from './users';
 import type { UserProfile } from '../types';
@@ -27,6 +27,11 @@ export async function inviteMember(input: InviteMemberInput): Promise<UserProfil
   const email = input.email.trim().toLowerCase();
   const credential = await createUserWithEmailAndPassword(secondaryAuth, email, randomTempPassword());
   const uid = credential.user.uid;
+
+  // Sets Firebase Auth's own displayName (separate from the Firestore
+  // profile) so the %DISPLAY_NAME% placeholder in the console's email
+  // templates actually resolves to something instead of being blank.
+  await updateProfile(credential.user, { displayName: input.name.trim() });
 
   // Done with the throwaway session immediately — never persisted anyway,
   // but sign out explicitly so it can't linger for the next invite.

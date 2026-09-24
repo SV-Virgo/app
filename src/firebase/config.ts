@@ -3,6 +3,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 // their RN-specific types lag the JS SDK; this is the documented RN setup.
 import { initializeAuth, getReactNativePersistence, getAuth, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
@@ -44,6 +45,11 @@ export const db = (() => {
 })();
 
 export const storage = getStorage(app);
+
+// europe-west1 matches where the Cloud Functions are deployed (see
+// functions/index.js) — the region must be passed explicitly or calls
+// silently 404 against the wrong default (us-central1).
+export const functions = getFunctions(app, 'europe-west1');
 
 // A second, isolated Firebase app instance used only to create new members'
 // Auth accounts (see firebase/invite.ts). Creating a user with the *primary*
