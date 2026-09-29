@@ -14,6 +14,7 @@ import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { colors, fontFamily, fontSize, radius, surface, text } from '../../theme/tokens';
 import type { RootStackParamList } from '../../navigation/types';
+import { confirmDestructive } from '../../utils/confirm';
 
 const QUESTION_TYPE_LABELS: Record<RegistrationQuestionType, string> = {
   text: 'Tekst',
@@ -140,7 +141,7 @@ export function AdminEventRegistrationScreen() {
             <View key={q.id} style={styles.questionBox}>
               <View style={styles.questionHeaderRow}>
                 <Text style={styles.questionIndex}>Vraag {idx + 1}</Text>
-                <Pressable onPress={() => removeQuestion(q.id)}>
+                <Pressable onPress={() => confirmDestructive(`Vraag ${idx + 1} verwijderen?`, () => removeQuestion(q.id), { message: 'De vraag is pas definitief weg nadat je het formulier opslaat.' })}>
                   <Text style={styles.delete}>Verwijderen</Text>
                 </Pressable>
               </View>

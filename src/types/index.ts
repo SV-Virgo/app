@@ -25,6 +25,9 @@ export interface UserProfile {
   committeeIdentities?: string[];
   avatarUrl?: string;
   active: boolean;
+  // Set by the inviteMember / resetPassword Cloud Functions after mailing a
+  // generated password; while true the app only shows ChangePasswordScreen.
+  mustChangePassword?: boolean;
   // Expo push tokens for every device this member is logged in on — an
   // array since the same account can be signed in on more than one phone.
   pushTokens?: string[];
@@ -152,6 +155,15 @@ export interface PriceCategory {
 export interface SoosOpeningHours {
   day: string; // "Dinsdag"
   time: string; // "21:00 – 01:00 · open borrel"
+}
+
+// Whether the Soos is open right now, as last announced with the "Soos is
+// open / gesloten" button. Separate from SoosInfo because it's written by
+// notifications.sendSoosOpen, not soos.managePrices (see firestore.rules).
+export interface SoosStatus {
+  open: boolean;
+  changedAt: number; // ms since epoch, from the server timestamp
+  changedByName: string;
 }
 
 export interface SoosInfo {

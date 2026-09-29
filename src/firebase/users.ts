@@ -1,4 +1,6 @@
 import { getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './config';
 import { collections, docRef, watchCollection } from './firestore';
 import type { UserProfile } from '../types';
 
@@ -31,4 +33,10 @@ export async function updateCommitteeIdentities(uid: string, committeeIdentities
 
 export async function updateMemberSince(uid: string, memberSince: number) {
   await updateDoc(docRef('users', uid), { memberSince });
+}
+
+// Deletes the member's Auth account and profile server-side (see deleteMember
+// in functions/index.js) — the client can't delete someone else's Auth account.
+export async function deleteMember(uid: string) {
+  await httpsCallable<{ uid: string }, { ok: true }>(functions, 'deleteMember')({ uid });
 }

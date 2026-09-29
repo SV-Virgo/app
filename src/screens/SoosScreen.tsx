@@ -1,16 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
 import { watchAssignmentsForWeek, watchSlotsForWeek } from '../firebase/planning';
-import { watchPriceCategories, savePriceCategory, deletePriceCategory, watchSoosInfo, saveSoosInfo } from '../firebase/soos';
+import {
+  watchPriceCategories,
+  savePriceCategory,
+  deletePriceCategory,
+  watchSoosInfo,
+  saveSoosInfo,
+  watchSoosStatus,
+  setSoosStatus,
+  SOOS_STATUS_LOCK_MS,
+} from '../firebase/soos';
 import { sendCategoryNotification } from '../firebase/notifications';
-import type { Assignment, PlanningSlot, PriceCategory, SoosInfo } from '../types';
+import type { Assignment, PlanningSlot, PriceCategory, SoosInfo, SoosStatus } from '../types';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, fontFamily, fontSize, radius, surface, text, tracking } from '../theme/tokens';
 import { currentWeekId, weekNumber } from '../utils/week';
+import { confirmDestructive } from '../utils/confirm';
+import { formatTime } from '../utils/date';
 
 const DEFAULT_SOOS_INFO: SoosInfo = {
   hours: [
@@ -21,15 +32,19 @@ const DEFAULT_SOOS_INFO: SoosInfo = {
 };
 
 export function SoosScreen() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, profile } = useAuth();
   const thisWeek = currentWeekId();
   const [barShifts, setBarShifts] = useState<Assignment[]>([]);
   const [weekSlots, setWeekSlots] = useState<PlanningSlot[]>([]);
   const [categories, setCategories] = useState<PriceCategory[]>([]);
   const [soosInfo, setSoosInfo] = useState<SoosInfo | null>(null);
   const [editing, setEditing] = useState(false);
-  const [sendingOpen, setSendingOpen] = useState(false);
-  const [sentOpen, setSentOpen] = useState(false);
+  const [status, setStatus] = useState<SoosStatus | null>(null);
+  const [sendingStatus, setSendingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  // Re-rendered once when the 2-hour lock runs out, so the button enables
+  // itself without the screen needing to be reopened.
+  const [now, setNow] = useState(Date.now());
   const canManage = hasPermission('soos.managePrices');
   const canSendSoosOpen = hasPermission('notifications.sendSoosOpen');
   // Prices/hours only ever render as read-only text unless someone with
@@ -42,6 +57,17 @@ export function SoosScreen() {
   useEffect(() => watchSlotsForWeek(thisWeek, setWeekSlots), [thisWeek]);
   useEffect(() => watchPriceCategories(setCategories), []);
   useEffect(() => watchSoosInfo(setSoosInfo), []);
+  useEffect(() => watchSoosStatus(setStatus), []);
+
+  const isOpen = status?.open ?? false;
+  const unlockAt = status ? status.changedAt + SOOS_STATUS_LOCK_MS : 0;
+  const locked = unlockAt > now;
+  useEffect(() => {
+    const wait = unlockAt - Date.now();
+    if (wait <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), wait + 500);
+    return () => clearTimeout(timer);
+  }, [unlockAt]);
 
   const byDay = groupByDay(barShifts, weekSlots);
   const info = soosInfo ?? DEFAULT_SOOS_INFO;
@@ -72,15 +98,46 @@ export function SoosScreen() {
     await saveSoosInfo({ ...info, hours: info.hours.filter((_, i) => i !== idx) });
   }
 
-  async function sendSoosOpen() {
-    setSendingOpen(true);
-    setSentOpen(false);
+  // Flips the open/gesloten status and announces it. The status is written
+  // first because that write is what enforces the 2-hour lock (see
+  // firestore.rules); the push only goes out if it succeeded.
+  async function toggleSoosStatus() {
+    const next = !isOpen;
+    setSendingStatus(true);
+    setStatusMessage(null);
     try {
-      await sendCategoryNotification('soosOpen', 'De Soos is open!', 'Kom gezellig langs.');
-      setSentOpen(true);
-    } finally {
-      setSendingOpen(false);
+      await setSoosStatus(next, profile?.name ?? '');
+    } catch (err) {
+      console.error('setSoosStatus failed:', err);
+      setStatusMessage({ text: 'De status is net door iemand anders gewijzigd, of je moet nog even wachten.', error: true });
+      setSendingStatus(false);
+      return;
     }
+    try {
+      await sendCategoryNotification(
+        'soosOpen',
+        next ? 'De Soos is open!' : 'De Soos is gesloten',
+        next ? 'Kom gezellig langs.' : 'Tot de volgende keer!',
+      );
+      setStatusMessage({ text: 'Melding verstuurd.' });
+    } catch (err) {
+      console.error('sendCategoryNotification failed:', err);
+      setStatusMessage({ text: 'Status aangepast, maar de melding kon niet worden verstuurd.', error: true });
+    } finally {
+      setSendingStatus(false);
+    }
+  }
+
+  // Confirm first: a wrong tap can't be undone for 2 hours.
+  function confirmToggleSoosStatus() {
+    Alert.alert(
+      isOpen ? 'Melden dat de Soos gesloten is?' : 'Melden dat de Soos open is?',
+      'Alle leden krijgen een melding. Je kunt de status daarna 2 uur niet wijzigen.',
+      [
+        { text: 'Annuleren', style: 'cancel' },
+        { text: 'Versturen', onPress: () => void toggleSoosStatus() },
+      ],
+    );
   }
 
   return (
@@ -111,7 +168,7 @@ export function SoosScreen() {
                   placeholder="21:00 – 01:00 · open borrel"
                   placeholderTextColor="rgba(255,255,255,0.6)"
                 />
-                <Pressable onPress={() => removeHourRow(idx)}>
+                <Pressable onPress={() => confirmDestructive(`${h.day} verwijderen?`, () => removeHourRow(idx))}>
                   <Text style={styles.hoursRemove}>×</Text>
                 </Pressable>
               </View>
@@ -142,10 +199,18 @@ export function SoosScreen() {
 
         {canSendSoosOpen && (
           <View style={{ paddingHorizontal: 20, marginBottom: 16, gap: 6 }}>
-            <Button variant="secondary" onPress={sendSoosOpen} disabled={sendingOpen}>
-              {sendingOpen ? 'Bezig…' : '📣 Meld dat de Soos open is'}
+            <Button variant="secondary" onPress={confirmToggleSoosStatus} disabled={sendingStatus || locked}>
+              {sendingStatus ? 'Bezig…' : isOpen ? '🔒 Soos is gesloten' : '📣 Soos is open'}
             </Button>
-            {sentOpen && <Text style={styles.sentText}>Melding verstuurd.</Text>}
+            {status && locked && (
+              <Text style={styles.lockText}>
+                {status.open ? 'Open' : 'Gesloten'} gemeld{status.changedByName ? ` door ${status.changedByName}` : ''} om{' '}
+                {formatTime(new Date(status.changedAt))} · weer te wijzigen vanaf {formatTime(new Date(unlockAt))}
+              </Text>
+            )}
+            {statusMessage && (
+              <Text style={statusMessage.error ? styles.errorText : styles.sentText}>{statusMessage.text}</Text>
+            )}
           </View>
         )}
 
@@ -186,7 +251,7 @@ export function SoosScreen() {
                 <Text style={styles.catLabel}>{cat.name}</Text>
               )}
               {editingActive && (
-                <Pressable onPress={() => deletePriceCategory(cat.id)}>
+                <Pressable onPress={() => confirmDestructive(`${cat.name} verwijderen?`, () => deletePriceCategory(cat.id))}>
                   <Text style={{ fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.error, marginRight: 20 }}>Verwijderen</Text>
                 </Pressable>
               )}
@@ -281,6 +346,8 @@ const styles = StyleSheet.create({
   },
   hoursRemove: { fontFamily: fontFamily.bodyBold, fontSize: 16, color: text.onBrand },
   hoursAdd: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: text.onBrand, textDecorationLine: 'underline' },
+  lockText: { fontFamily: fontFamily.body, fontSize: 12, color: text.muted, textAlign: 'center' },
+  errorText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.error, textAlign: 'center' },
   sentText: { fontFamily: fontFamily.bodySemibold, fontSize: 12, color: colors.success, textAlign: 'center' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8 },
   barLabel: { fontFamily: fontFamily.display, fontSize: fontSize.sm, color: colors.blue700 },

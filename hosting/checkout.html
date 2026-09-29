@@ -1,27 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="nl">
 <head>
   <meta charset="utf-8">
   <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
   <title>Virgo — Betalen</title>
   <style>
-    body { margin: 0; padding: 16px; font-family: -apple-system, sans-serif; background: #ffffff; }
+    body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #ffffff; color: #241f1c; }
     #sumup-card { min-height: 300px; }
+    .result { display: none; text-align: center; padding: 48px 16px; }
+    .result h1 { font-size: 22px; margin: 0 0 8px 0; }
+    .result p { font-size: 15px; line-height: 1.5; color: #6b5f55; margin: 0 0 24px 0; }
+    .result a { display: inline-block; background: #2563a8; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 15px; padding: 14px 32px; border-radius: 999px; }
   </style>
 </head>
 <body>
   <div id="sumup-card"></div>
+
+  <div class="result" id="result-success">
+    <h1>Betaling gelukt</h1>
+    <p>Je wordt teruggestuurd naar de app.</p>
+    <a href="virgo://betaling?status=success">Terug naar de app</a>
+  </div>
+
+  <div class="result" id="result-failed">
+    <h1>Betaling mislukt</h1>
+    <p>Er is niets afgeschreven. Probeer het opnieuw vanuit de app.</p>
+    <a href="virgo://betaling?status=failed">Terug naar de app</a>
+  </div>
+
   <script src="https://gateway.sumup.com/gateway/ecom/card/v2/sdk.js"></script>
   <script>
-    // Served from Firebase Hosting (not injected as inline WebView HTML)
-    // specifically so this page has a real, stable domain — Apple Pay and
-    // Google Pay both require domain verification against a genuine hosted
-    // origin, which an inline `source={{ html }}` WebView can't provide.
-    // See src/components/SumupCheckoutModal.tsx.
-    function post(message) {
-      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message));
-    }
-
+    // Opened by the app in an in-app browser (SFSafariViewController on iOS,
+    // a Chrome Custom Tab on Android — see src/firebase/payments.ts), not a
+    // WebView: Apple Pay and Google Pay only work in a real browser engine on
+    // a verified domain, and iOS disables Apple Pay in any WebView the app
+    // injects scripts into. The only way back to the app is the virgo://
+    // scheme below; the app then re-checks the real payment status with the
+    // confirmSumupPayment Cloud Function, so nothing here is trusted.
     var params = new URLSearchParams(window.location.search);
     var checkoutId = params.get('checkoutId');
 
@@ -29,28 +44,39 @@
     // domain in the Google Pay & Wallet Console — see
     // https://developer.sumup.com/online-payments/apm/google-pay/. Leave
     // GOOGLE_PAY_MERCHANT_ID blank until that's done; the widget just
-    // shows card entry (today's behavior) until it's filled in. Apple Pay
-    // needs no equivalent mount option — it renders automatically as an
-    // APM once the domain is registered with Apple and enabled in the
-    // SumUp Dashboard (Settings > For developers > Payment wallets).
+    // shows card entry until it's filled in. Apple Pay needs no equivalent
+    // mount option — it renders automatically as an APM once the domain is
+    // registered (hosting/.well-known/apple-developer-merchantid-domain-association)
+    // and enabled in the SumUp Dashboard (Settings > For developers > Payment wallets).
     var GOOGLE_PAY_MERCHANT_ID = '';
     var GOOGLE_PAY_MERCHANT_NAME = 'SV Virgo';
 
+    function finish(status) {
+      document.getElementById('sumup-card').style.display = 'none';
+      document.getElementById(status === 'success' ? 'result-success' : 'result-failed').style.display = 'block';
+      if (status === 'success') {
+        // Brief pause so the member sees the confirmation before the app takes over.
+        setTimeout(function () { window.location.href = 'virgo://betaling?status=success'; }, 1200);
+      }
+    }
+
     if (!checkoutId) {
-      post({ type: 'error', body: 'missing checkoutId' });
+      finish('failed');
     } else {
       try {
         SumUpCard.mount(Object.assign({
           id: 'sumup-card',
           checkoutId: checkoutId,
-          onResponse: function (type, body) {
-            post({ type: type, body: body });
+          locale: 'nl-NL',
+          onResponse: function (type) {
+            if (type === 'success') finish('success');
+            else if (type === 'fail' || type === 'error') finish('failed');
           },
         }, GOOGLE_PAY_MERCHANT_ID ? {
           googlePay: { merchantId: GOOGLE_PAY_MERCHANT_ID, merchantName: GOOGLE_PAY_MERCHANT_NAME },
         } : {}));
       } catch (e) {
-        post({ type: 'error', body: String(e) });
+        finish('failed');
       }
     }
   </script>

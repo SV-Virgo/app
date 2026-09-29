@@ -27,6 +27,7 @@ import { PickerField } from '../components/PickerField';
 import { colors, fontFamily, fontSize, radius, surface, text, tracking } from '../theme/tokens';
 import { currentWeekId, mondayOfWeekWithOffset, sundayOfWeekWithOffset, weekIdWithOffset, weekNumber } from '../utils/week';
 import { formatDutchDayLong, formatTimeRange } from '../utils/date';
+import { confirmDestructive } from '../utils/confirm';
 
 function setHours(date: Date, hours: number, minutes: number): Date {
   const d = new Date(date);
@@ -276,7 +277,7 @@ function ManagerSection({ roleName }: { roleName?: string }) {
                   <Text style={styles.shiftDay}>{slot.day}</Text>
                   <Text style={styles.mutedText}>{slot.time}</Text>
                 </View>
-                <Pressable onPress={() => removePlanningSlot(slot.id)}>
+                <Pressable onPress={() => confirmDestructive(`Dienst ${slot.day} ${slot.time} verwijderen?`, () => removePlanningSlot(slot.id))}>
                   <Text style={{ fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.error }}>Verwijderen</Text>
                 </Pressable>
               </View>
@@ -287,7 +288,7 @@ function ManagerSection({ roleName }: { roleName?: string }) {
                     <InitialsAvatar initials={p.memberInitials} size={28} />
                     <Text style={{ flex: 1, fontFamily: fontFamily.body, fontSize: fontSize.sm, color: text.body }}>{p.memberName}</Text>
                     <Text style={{ fontFamily: fontFamily.bodySemibold, fontSize: 12, color: prefColor(pref) }}>{prefLabel(pref)}</Text>
-                    <Pressable onPress={() => removeAssignment(p.id)}>
+                    <Pressable onPress={() => confirmDestructive(`${p.memberName} van deze dienst verwijderen?`, () => removeAssignment(p.id))}>
                       <Text style={{ fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.error }}>×</Text>
                     </Pressable>
                   </View>

@@ -1,9 +1,37 @@
 import { arrayUnion, arrayRemove, getDocs, updateDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { collections, docRef } from './firestore';
+import { functions } from './config';
 import type { NotificationPreferences, UserProfile } from '../types';
+
+// The token this device registered for the signed-in member, remembered so
+// logout can detach it again (see unregisterThisDevice).
+let registeredToken: { uid: string; token: string } | null = null;
 
 export async function registerPushToken(uid: string, token: string) {
   await updateDoc(docRef('users', uid), { pushTokens: arrayUnion(token) });
+  registeredToken = { uid, token };
+  // Detach the token from any other account that was used on this device
+  // before (see claimPushToken in functions/index.js). Best-effort: a failure
+  // here only means possible duplicate pushes, not a broken login.
+  try {
+    await httpsCallable<{ token: string }, { removed: number }>(functions, 'claimPushToken')({ token });
+  } catch (err) {
+    console.warn('claimPushToken failed:', err);
+  }
+}
+
+// Called on logout, while still signed in (the rules need request.auth to
+// edit the profile), so this device stops getting the old account's pushes.
+export async function unregisterThisDevice() {
+  if (!registeredToken) return;
+  const { uid, token } = registeredToken;
+  registeredToken = null;
+  try {
+    await unregisterPushToken(uid, token);
+  } catch (err) {
+    console.warn('unregisterPushToken failed:', err);
+  }
 }
 
 export async function unregisterPushToken(uid: string, token: string) {
@@ -36,14 +64,17 @@ export async function sendCategoryNotification(category: keyof NotificationPrefe
     .map((d) => d.data() as UserProfile)
     .filter((u) => u.notificationPreferences?.[category] !== false)
     .flatMap((u) => u.pushTokens ?? []);
+  // One device can still be listed on two profiles (e.g. an old build without
+  // claimPushToken) — never push the same message to it twice.
+  const uniqueTokens = [...new Set(tokens)];
 
-  console.log(`[push] "${category}": ${tokens.length} token(s) opted in`);
-  if (tokens.length === 0) return;
+  console.log(`[push] "${category}": ${uniqueTokens.length} token(s) opted in`);
+  if (uniqueTokens.length === 0) return;
 
   // Without an explicit high priority, FCM can defer delivery until the
   // device is more active — which looks exactly like "works when the app is
   // open, not when it's merely backgrounded".
-  const messages = tokens.map((to) => ({ to, title, body, priority: 'high' as const, channelId: 'default' }));
+  const messages = uniqueTokens.map((to) => ({ to, title, body, priority: 'high' as const, channelId: 'default' }));
   for (const batch of chunk(messages, CHUNK_SIZE)) {
     const res = await fetch(EXPO_PUSH_ENDPOINT, {
       method: 'POST',

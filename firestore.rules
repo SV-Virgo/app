@@ -165,6 +165,21 @@ service cloud.firestore {
       allow write: if hasPermission('soos.managePrices');
     }
 
+    // "Soos is open / gesloten" toggle. Each write must flip the status and
+    // is only allowed 2 hours after the previous one (SOOS_STATUS_LOCK_MS in
+    // src/firebase/soos.ts), so the button can't be spammed.
+    match /soosStatus/{docId} {
+      allow read: if signedIn();
+      allow write: if hasPermission('notifications.sendSoosOpen') &&
+        request.resource.data.keys().hasOnly(['open', 'changedAt', 'changedByName']) &&
+        request.resource.data.open is bool &&
+        request.resource.data.changedByName is string &&
+        request.resource.data.changedAt == request.time &&
+        (resource == null ||
+          (request.resource.data.open != resource.data.open &&
+           request.time > resource.data.changedAt + duration.value(2, 'h')));
+    }
+
     match /agendaEvents/{eventId} {
       allow read: if signedIn();
       allow write: if hasPermission('agenda.manage');

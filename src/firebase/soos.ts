@@ -1,6 +1,6 @@
-import { addDoc, deleteDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, deleteDoc, onSnapshot, serverTimestamp, setDoc, updateDoc, type Timestamp } from 'firebase/firestore';
 import { collections, docRef, orderBy, query, watchCollection } from './firestore';
-import type { PriceCategory, SoosInfo } from '../types';
+import type { PriceCategory, SoosInfo, SoosStatus } from '../types';
 
 export function watchPriceCategories(onData: (categories: PriceCategory[]) => void) {
   const q = query(collections.priceCategories, orderBy('order', 'asc'));
@@ -25,4 +25,25 @@ export function watchSoosInfo(onData: (info: SoosInfo | null) => void) {
 
 export async function saveSoosInfo(info: SoosInfo) {
   await setDoc(docRef('soosInfo', SOOS_INFO_ID), info);
+}
+
+const SOOS_STATUS_ID = 'current';
+
+// Minimum time between two open/gesloten announcements — also enforced in
+// firestore.rules, so keep the two in sync.
+export const SOOS_STATUS_LOCK_MS = 2 * 60 * 60 * 1000;
+
+export function watchSoosStatus(onData: (status: SoosStatus | null) => void) {
+  return onSnapshot(docRef('soosStatus', SOOS_STATUS_ID), (snap) => {
+    const data = snap.data({ serverTimestamps: 'estimate' });
+    if (!data) return onData(null);
+    onData({ open: data.open, changedAt: (data.changedAt as Timestamp).toMillis(), changedByName: data.changedByName });
+  });
+}
+
+// Written *before* the push goes out, so it doubles as the lock: if two
+// people press at once, the rules reject the second write and only one
+// notification is sent.
+export async function setSoosStatus(open: boolean, changedByName: string) {
+  await setDoc(docRef('soosStatus', SOOS_STATUS_ID), { open, changedAt: serverTimestamp(), changedByName });
 }

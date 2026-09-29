@@ -10,6 +10,7 @@ import { EmojiReactionBar } from './EmojiReactionBar';
 import { CommentThread } from './CommentThread';
 import { colors, fontFamily, fontSize, radius, text } from '../theme/tokens';
 import { formatRelativeTime } from '../utils/date';
+import { confirmDestructive } from '../utils/confirm';
 
 interface Props {
   post: FeedPost;
@@ -112,7 +113,7 @@ export function PostCard({ post, reactions, myUid, myName, canModerate }: Props)
             </Pressable>
           )}
           {canModifyStatus && (
-            <Pressable onPress={handleDelete}>
+            <Pressable onPress={() => confirmDestructive('Bericht verwijderen?', handleDelete)}>
               <Text style={styles.deleteLink}>Verwijderen</Text>
             </Pressable>
           )}

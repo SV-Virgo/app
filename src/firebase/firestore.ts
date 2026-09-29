@@ -25,6 +25,7 @@ export const collections = {
   assignments: collection(db, 'assignments'),
   priceCategories: collection(db, 'priceCategories'),
   soosInfo: collection(db, 'soosInfo'),
+  soosStatus: collection(db, 'soosStatus'),
   agendaEvents: collection(db, 'agendaEvents'),
   agendaRsvps: collection(db, 'agendaRsvps'),
   registrationForms: collection(db, 'registrationForms'),

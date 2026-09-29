@@ -12,6 +12,7 @@ import { PickerField } from '../../components/PickerField';
 import { useAuth } from '../../state/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, fontFamily, fontSize, radius, surface, text } from '../../theme/tokens';
+import { confirmDestructive } from '../../utils/confirm';
 
 function parseTimeOnToday(time: string): Date {
   const [h, m] = time.split(':').map(Number);
@@ -208,7 +209,7 @@ export function AdminAgendaScreen() {
                     <Text style={styles.edit}>Aanmelding</Text>
                   </Pressable>
                 )}
-                <Pressable onPress={() => deleteAgendaEvent(ev.id)}>
+                <Pressable onPress={() => confirmDestructive(`${ev.title} verwijderen?`, () => deleteAgendaEvent(ev.id))}>
                   <Text style={styles.delete}>Verwijderen</Text>
                 </Pressable>
               </View>

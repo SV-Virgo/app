@@ -23,7 +23,9 @@ interface Props {
   // that crosses a month boundary without becoming ambiguous.
   dateRangeLabel?: string;
   // Only passed when this event has an aanmeldformulier at all.
-  registration?: { registered: boolean; onPress: () => void };
+  // openPayment is a short, pre-formatted note ("1 van 2 termijnen nog te
+  // betalen") shown only while the member still owes something.
+  registration?: { registered: boolean; openPayment?: string; onPress: () => void };
 }
 
 export function EventCard({ day, month, time, title, location, tag, rsvpCounts, onPressRsvp, dateRangeLabel, registration }: Props) {
@@ -55,8 +57,13 @@ export function EventCard({ day, month, time, title, location, tag, rsvpCounts, 
       )}
       {registration && (
         <Pressable onPress={registration.onPress} style={styles.rsvpRow}>
-          <Text style={styles.rsvpSummary}>{registration.registered ? 'Je bent aangemeld' : 'Aanmelden vereist'}</Text>
-          <Text style={styles.rsvpChevron}>{registration.registered ? 'Bekijken ›' : 'Aanmelden ›'}</Text>
+          <Text style={styles.rsvpSummary}>
+            {registration.registered ? 'Je bent aangemeld' : 'Aanmelden vereist'}
+            {registration.openPayment && <Text style={styles.openPayment}> · {registration.openPayment}</Text>}
+          </Text>
+          <Text style={styles.rsvpChevron}>
+            {registration.openPayment ? 'Betalen ›' : registration.registered ? 'Bekijken ›' : 'Aanmelden ›'}
+          </Text>
         </Pressable>
       )}
     </View>
@@ -106,5 +113,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   rsvpSummary: { flex: 1, fontFamily: fontFamily.body, fontSize: 12, color: text.muted },
+  openPayment: { fontFamily: fontFamily.bodySemibold, color: colors.error },
   rsvpChevron: { fontFamily: fontFamily.bodyBold, fontSize: 12, color: colors.blue600 },
 });

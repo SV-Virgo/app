@@ -3,12 +3,14 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../state/AuthContext';
+import { requestPasswordReset } from '../firebase/auth';
 import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { colors, fontFamily, fontSize, radius, shadow, surface, text } from '../theme/tokens';
@@ -19,6 +21,10 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // "Wachtwoord vergeten" swaps the password field for a single email field
+  // on the same card rather than navigating to a separate screen.
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function handleLogin() {
     setError(null);
@@ -32,6 +38,26 @@ export function LoginScreen() {
     }
   }
 
+  async function handleReset() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await requestPasswordReset(email);
+      setResetSent(true);
+    } catch (e) {
+      console.error('requestPasswordReset failed:', e);
+      setError('Er ging iets mis bij het versturen. Probeer het later opnieuw.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function toggleForgotMode() {
+    setForgotMode((m) => !m);
+    setResetSent(false);
+    setError(null);
+  }
+
   return (
     // 'height' on Android rather than relying on the native windowSoftInputMode
     // resize config — that alone wasn't reliably resizing the layout here,
@@ -43,8 +69,10 @@ export function LoginScreen() {
       </View>
       <SafeAreaView edges={['bottom']} style={[styles.sheet, shadow.lg]}>
         <View style={{ gap: 4 }}>
-          <Text style={styles.welcome}>Welkom terug</Text>
-          <Text style={styles.sub}>Log in met je lidmaatschapsaccount</Text>
+          <Text style={styles.welcome}>{forgotMode ? 'Wachtwoord vergeten' : 'Welkom terug'}</Text>
+          <Text style={styles.sub}>
+            {forgotMode ? 'Vul je e-mailadres in, dan mailen we je een nieuw wachtwoord' : 'Log in met je lidmaatschapsaccount'}
+          </Text>
         </View>
         <Input
           label="E-mailadres"
@@ -54,19 +82,35 @@ export function LoginScreen() {
           value={email}
           onChangeText={setEmail}
         />
-        <Input
-          label="Wachtwoord"
-          placeholder="••••••••"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        {!forgotMode && (
+          <Input
+            label="Wachtwoord"
+            placeholder="••••••••"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+        )}
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {forgotMode && resetSent ? (
+          <Text style={styles.sub}>
+            Als dit e-mailadres bij ons bekend is, ontvang je binnen een paar minuten een e-mail met een nieuw wachtwoord. Kijk ook in je spam.
+          </Text>
+        ) : null}
         <View style={{ alignItems: 'center', gap: 14, marginTop: 6 }}>
-          <Button onPress={handleLogin} disabled={submitting || !email || !password}>
-            {submitting ? 'Bezig…' : 'Inloggen'}
-          </Button>
-          <Text style={styles.link}>Nog geen account? Meld je aan bij het bestuur</Text>
+          {forgotMode ? (
+            <Button onPress={handleReset} disabled={submitting || !email.trim() || resetSent}>
+              {submitting ? 'Bezig…' : resetSent ? 'Verstuurd' : 'Nieuw wachtwoord mailen'}
+            </Button>
+          ) : (
+            <Button onPress={handleLogin} disabled={submitting || !email || !password}>
+              {submitting ? 'Bezig…' : 'Inloggen'}
+            </Button>
+          )}
+          <Pressable onPress={toggleForgotMode} hitSlop={8}>
+            <Text style={styles.link}>{forgotMode ? 'Terug naar inloggen' : 'Wachtwoord vergeten?'}</Text>
+          </Pressable>
+          {!forgotMode && <Text style={styles.sub}>Nog geen account? Meld je aan bij het bestuur</Text>}
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>

@@ -5,6 +5,7 @@ import type { FeedComment } from '../types';
 import { InitialsAvatar } from './InitialsAvatar';
 import { colors, fontFamily, fontSize, radius, text } from '../theme/tokens';
 import { formatRelativeTime } from '../utils/date';
+import { confirmDestructive } from '../utils/confirm';
 
 interface Props {
   postId: string;
@@ -72,7 +73,7 @@ export function CommentThread({ postId, myUid, myName, canModerate }: Props) {
                           <Text style={styles.actionLink}>Bewerken</Text>
                         </Pressable>
                       )}
-                      <Pressable onPress={() => deleteComment(c.id)}>
+                      <Pressable onPress={() => confirmDestructive('Reactie verwijderen?', () => deleteComment(c.id))}>
                         <Text style={styles.deleteLink}>Verwijderen</Text>
                       </Pressable>
                     </View>

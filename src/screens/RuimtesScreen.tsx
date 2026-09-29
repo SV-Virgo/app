@@ -12,6 +12,7 @@ import { PickerField } from '../components/PickerField';
 import { CommitteeIcon, LockIcon } from '../components/MiscIcons';
 import { colors, fontFamily, fontSize, radius, surface, text, tracking } from '../theme/tokens';
 import { formatIsoDateShort, formatTime, toIsoDate } from '../utils/date';
+import { confirmDestructive } from '../utils/confirm';
 
 function setHours(date: Date, hours: number, minutes: number): Date {
   const d = new Date(date);
@@ -234,7 +235,7 @@ export function RuimtesScreen() {
                   </Text>
                 </View>
                 {canCancelThis && (
-                  <Pressable onPress={() => cancelBooking(b.id)}>
+                  <Pressable onPress={() => confirmDestructive('Reservering annuleren?', () => cancelBooking(b.id), { confirmText: 'Reservering annuleren', cancelText: 'Terug' })}>
                     <Text style={styles.cancel}>Annuleren</Text>
                   </Pressable>
                 )}

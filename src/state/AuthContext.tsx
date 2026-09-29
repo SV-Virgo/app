@@ -3,6 +3,7 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { subscribeToAuthState, login as firebaseLogin, logout as firebaseLogout } from '../firebase/auth';
 import { watchUserProfile } from '../firebase/users';
 import { watchRoles } from '../firebase/roles';
+import { unregisterThisDevice } from '../firebase/notifications';
 import type { Role, UserProfile } from '../types';
 import type { PermissionKey } from '../permissions/catalog';
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await firebaseLogin(email, password);
     },
     logout: async () => {
+      await unregisterThisDevice();
       await firebaseLogout();
     },
   };

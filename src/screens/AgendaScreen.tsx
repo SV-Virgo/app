@@ -13,6 +13,18 @@ import { AgendaRsvpModal } from '../components/AgendaRsvpModal';
 import { formatDateRange } from '../utils/date';
 import { fontFamily, surface, text } from '../theme/tokens';
 
+// What the member still owes on their signup, for the agenda card — undefined
+// when nothing is open (free, fully paid, or not signed up).
+function openPaymentNote(submission: RegistrationSubmission | undefined): string | undefined {
+  if (!submission?.amount) return undefined;
+  if (submission.installments) {
+    const open = submission.installments.filter((i) => i.paymentStatus !== 'paid').length;
+    if (open === 0) return undefined;
+    return `${open} van ${submission.installments.length} termijnen nog te betalen`;
+  }
+  return submission.paymentStatus === 'paid' ? undefined : `${submission.amount} nog te betalen`;
+}
+
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -75,6 +87,7 @@ export function AgendaScreen() {
                   form && profile
                     ? {
                         registered: !!mySubmission,
+                        openPayment: openPaymentNote(mySubmission),
                         onPress: () => navigation.navigate('EventRegistration', { eventId: ev.id, eventTitle: ev.title }),
                       }
                     : undefined

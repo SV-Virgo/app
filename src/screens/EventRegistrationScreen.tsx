@@ -3,12 +3,11 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { watchRegistrationForm, watchMySubmission, submitRegistration } from '../firebase/registrations';
-import { createSumupCheckout, confirmSumupPayment } from '../firebase/payments';
+import { createSumupCheckout, confirmSumupPayment, openHostedCheckout } from '../firebase/payments';
 import type { RegistrationForm, RegistrationSubmission } from '../types';
 import { useAuth } from '../state/AuthContext';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
-import { SumupCheckoutModal } from '../components/SumupCheckoutModal';
 import { colors, fontFamily, fontSize, radius, surface, text } from '../theme/tokens';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -27,9 +26,6 @@ export function EventRegistrationScreen() {
   const [city, setCity] = useState('');
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [checkoutId, setCheckoutId] = useState<string | null>(null);
-  const [checkoutVisible, setCheckoutVisible] = useState(false);
-  const [checkoutAmount, setCheckoutAmount] = useState('');
   const [payingIndex, setPayingIndex] = useState<number | null>(null);
   const [startingCheckout, setStartingCheckout] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -63,37 +59,50 @@ export function EventRegistrationScreen() {
     }
   }
 
-  async function startPayment(index: number | null, amount: string) {
+  async function startPayment(index: number | null) {
     setStartingCheckout(true);
     setPayingIndex(index);
+    let checkoutId: string;
     try {
-      const id = await createSumupCheckout(eventId, index ?? undefined);
-      setCheckoutId(id);
-      setCheckoutAmount(amount);
-      setCheckoutVisible(true);
+      checkoutId = await createSumupCheckout(eventId, index ?? undefined);
     } catch (err) {
       Alert.alert('Betalen mislukt', err instanceof Error ? err.message : 'Probeer het later opnieuw.');
+      return;
     } finally {
       setStartingCheckout(false);
     }
+
+    await openHostedCheckout(checkoutId);
+    await confirmAfterReturn(index);
   }
 
-  async function handleCheckoutSuccess() {
+  // Runs whenever the member is back from the checkout page, however it
+  // ended. SumUp can still report PENDING for a moment right after a
+  // successful payment, so retry a few times before giving up — the
+  // sumupWebhook Cloud Function catches anything later still. A paid status
+  // needs no message: the submission watch updates the screen by itself.
+  async function confirmAfterReturn(index: number | null) {
     setConfirming(true);
     try {
-      const status = await confirmSumupPayment(eventId, payingIndex ?? undefined);
-      setCheckoutVisible(false);
-      if (status !== 'paid') {
-        Alert.alert('Betaling nog niet bevestigd', 'Probeer het opnieuw, of neem contact op als het bedrag al is afgeschreven.');
+      let status = await confirmSumupPayment(eventId, index ?? undefined);
+      for (let attempt = 0; status === 'pending' && attempt < 3; attempt++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        status = await confirmSumupPayment(eventId, index ?? undefined);
       }
+      if (status === 'failed') {
+        Alert.alert('Betaling mislukt', 'Er is niets afgeschreven. Probeer het opnieuw.');
+      } else if (status === 'pending') {
+        Alert.alert(
+          'Nog geen betaling ontvangen',
+          'Heb je het betaalscherm gesloten zonder te betalen? Dan kun je het opnieuw proberen. Heb je wel betaald, dan wordt dit binnen een paar minuten bijgewerkt.',
+        );
+      }
+    } catch (err) {
+      console.error('confirmSumupPayment failed:', err);
+      Alert.alert('Betaling controleren mislukt', 'We konden je betaling niet controleren. Heb je betaald, dan wordt dit binnen een paar minuten bijgewerkt.');
     } finally {
       setConfirming(false);
     }
-  }
-
-  function handleCheckoutFailure() {
-    setCheckoutVisible(false);
-    Alert.alert('Betaling mislukt', 'Er ging iets mis bij het verwerken van je betaling. Probeer het opnieuw.');
   }
 
   const loading = form === undefined || mySubmission === undefined;
@@ -136,8 +145,8 @@ export function EventRegistrationScreen() {
                         : `Nog te betalen · ${inst.amount}`}
                     </Text>
                     {inst.paymentStatus !== 'paid' && (
-                      <Button onPress={() => startPayment(i, inst.amount)} disabled={startingCheckout || confirming} style={{ flex: 0 }}>
-                        {startingCheckout && payingIndex === i ? 'Bezig…' : 'Betalen'}
+                      <Button onPress={() => startPayment(i)} disabled={startingCheckout || confirming} style={{ flex: 0 }}>
+                        {(startingCheckout || confirming) && payingIndex === i ? 'Bezig…' : 'Betalen'}
                       </Button>
                     )}
                   </View>
@@ -153,8 +162,8 @@ export function EventRegistrationScreen() {
                     : `Nog te betalen · ${mySubmission.amount}`}
                 </Text>
                 {mySubmission.paymentStatus !== 'paid' && (
-                  <Button onPress={() => startPayment(null, mySubmission.amount ?? '')} disabled={startingCheckout || confirming}>
-                    {startingCheckout ? 'Bezig…' : 'Betalen'}
+                  <Button onPress={() => startPayment(null)} disabled={startingCheckout || confirming}>
+                    {startingCheckout || confirming ? 'Bezig…' : 'Betalen'}
                   </Button>
                 )}
               </>
@@ -242,14 +251,6 @@ export function EventRegistrationScreen() {
         )}
       </ScrollView>
 
-      <SumupCheckoutModal
-        visible={checkoutVisible}
-        checkoutId={checkoutId}
-        amount={checkoutAmount}
-        onClose={() => setCheckoutVisible(false)}
-        onSuccess={handleCheckoutSuccess}
-        onFailure={handleCheckoutFailure}
-      />
     </SafeAreaView>
   );
 }

@@ -6,6 +6,7 @@ import { useAuth } from '../state/AuthContext';
 import { usePushTokenRegistration } from '../state/usePushTokenRegistration';
 import { TabNavigator } from './TabNavigator';
 import { LoginScreen } from '../screens/LoginScreen';
+import { ChangePasswordScreen } from '../screens/ChangePasswordScreen';
 import { ProfielScreen } from '../screens/ProfielScreen';
 import { LedenScreen } from '../screens/LedenScreen';
 import { AdminRolesScreen } from '../screens/admin/AdminRolesScreen';
@@ -38,6 +39,8 @@ export function RootNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} options={{ animation: 'fade' }} />
+        ) : profile.mustChangePassword ? (
+          <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ animation: 'fade' }} />
         ) : (
           <>
             <Stack.Screen name="Tabs" component={TabNavigator} />

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { watchAllUsers, updateUserRole, updateCommitteeIdentities, updateMemberSince } from '../../firebase/users';
+import { watchAllUsers, updateUserRole, updateCommitteeIdentities, updateMemberSince, deleteMember } from '../../firebase/users';
+import { useAuth } from '../../state/AuthContext';
+import { confirmDestructive } from '../../utils/confirm';
 import { watchRoles } from '../../firebase/roles';
 import { inviteMember } from '../../firebase/invite';
 import type { Role, UserProfile } from '../../types';
@@ -11,15 +13,20 @@ import { Button } from '../../components/Button';
 import { InitialsAvatar } from '../../components/InitialsAvatar';
 import { colors, fontFamily, fontSize, radius, surface, text } from '../../theme/tokens';
 
-function firebaseAuthErrorMessage(err: unknown): string {
-  const code = (err as { code?: string })?.code ?? '';
-  if (code === 'auth/email-already-in-use') return 'Er bestaat al een account met dit e-mailadres.';
-  if (code === 'auth/invalid-email') return 'Dit e-mailadres is ongeldig.';
+// inviteMember's HttpsErrors already carry a Dutch message for the cases a
+// member can act on (duplicate/invalid email, mail failure).
+function inviteErrorMessage(err: unknown): string {
+  const { code = '', message = '' } = (err as { code?: string; message?: string }) ?? {};
+  // Unhandled server errors arrive as code functions/internal with the bare
+  // message "internal" — only show messages the function wrote itself.
+  if (code.startsWith('functions/') && message && message.toLowerCase() !== 'internal') return message;
   return 'Uitnodigen is mislukt. Probeer het nog eens.';
 }
 
 export function AdminMembersScreen() {
   const navigation = useNavigation();
+  const { profile } = useAuth();
+  const [deletingUid, setDeletingUid] = useState<string | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState('');
@@ -59,6 +66,26 @@ export function AdminMembersScreen() {
     setMemberSinceDraftFor(null);
   }
 
+  function handleDeleteMember(member: UserProfile) {
+    confirmDestructive(
+      `${member.name} verwijderen?`,
+      async () => {
+        setDeletingUid(member.uid);
+        try {
+          await deleteMember(member.uid);
+          setOpenPickerFor(null);
+        } catch (err) {
+          console.error('deleteMember failed:', err);
+          const message = (err as { message?: string })?.message;
+          Alert.alert('Verwijderen mislukt', message && message.toLowerCase() !== 'internal' ? message : 'Probeer het nog eens.');
+        } finally {
+          setDeletingUid(null);
+        }
+      },
+      { message: 'Het account wordt verwijderd en kan niet meer inloggen. Aanmeldingen, betalingen en reserveringen blijven bewaard.' },
+    );
+  }
+
   async function handleInvite() {
     if (!inviteName.trim() || !inviteEmail.trim() || !inviteRoleId) return;
     setSubmitting(true);
@@ -67,7 +94,7 @@ export function AdminMembersScreen() {
     try {
       await inviteMember({ name: inviteName, email: inviteEmail, roleId: inviteRoleId });
       setInviteSuccess(
-        `${inviteName.trim()} kan inloggen met ${inviteEmail.trim()}. Er is een e-mail verstuurd om een wachtwoord in te stellen.`,
+        `${inviteName.trim()} heeft een e-mail gekregen met een wachtwoord om in te loggen met ${inviteEmail.trim()}.`,
       );
       setInviteName('');
       setInviteEmail('');
@@ -75,7 +102,7 @@ export function AdminMembersScreen() {
       // Alert.alert is unreliable on web (react-native-web), so surface
       // errors inline instead — and always log the real error for debugging.
       console.error('inviteMember failed:', err);
-      setInviteError(firebaseAuthErrorMessage(err));
+      setInviteError(inviteErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -139,7 +166,7 @@ export function AdminMembersScreen() {
               ))}
             </View>
             <Text style={styles.inviteHint}>
-              Er wordt direct een account aangemaakt en een e-mail gestuurd waarmee dit lid zelf een wachtwoord instelt.
+              Er wordt direct een account aangemaakt en een e-mail gestuurd met een tijdelijk wachtwoord. Bij de eerste keer inloggen kiest dit lid een eigen wachtwoord.
             </Text>
             {inviteError && <Text style={styles.inviteErrorText}>{inviteError}</Text>}
             {inviteSuccess && <Text style={styles.inviteSuccessText}>{inviteSuccess}</Text>}
@@ -206,7 +233,11 @@ export function AdminMembersScreen() {
                         <View key={c} style={styles.chip}>
                           <Text style={styles.chipText}>{c}</Text>
                           <Pressable
-                            onPress={() => updateCommitteeIdentities(u.uid, (u.committeeIdentities ?? []).filter((x) => x !== c))}
+                            onPress={() =>
+                              confirmDestructive(`${c} bij ${u.name} verwijderen?`, () =>
+                                updateCommitteeIdentities(u.uid, (u.committeeIdentities ?? []).filter((x) => x !== c)),
+                              )
+                            }
                           >
                             <Text style={styles.chipText}>×</Text>
                           </Pressable>
@@ -244,6 +275,17 @@ export function AdminMembersScreen() {
                       keyboardType="number-pad"
                       style={styles.yearInput}
                     />
+
+                    {u.uid !== profile?.uid && (
+                      <Button
+                        variant="danger"
+                        onPress={() => handleDeleteMember(u)}
+                        disabled={deletingUid === u.uid}
+                        style={{ marginTop: 16 }}
+                      >
+                        {deletingUid === u.uid ? 'Bezig…' : 'Lid verwijderen'}
+                      </Button>
+                    )}
                   </View>
                 )}
               </View>

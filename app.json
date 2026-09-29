@@ -3,12 +3,12 @@
     "name": "Virgo",
     "slug": "virgo-app",
     "scheme": "virgo",
-    "version": "1.0.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "nl.svvirgo.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -43,7 +43,9 @@
         {
           "color": "#2563a8"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "./plugins/withPhoneOnly"
     ],
     "extra": {
       "eas": {
